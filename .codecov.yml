@@ -1,10 +1,16 @@
 coverage:
   status:
-    project: off
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        only_pulls: true
     patch: off
 
 ignore:
   - "tests/*"
-  - "third_party/*"
+  - "third_party/**/*"
 
-comment: off
+comment:
+  layout: "diff, flags, files"
+  after_n_builds: 4

@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2017, The OpenThread Authors.
+ *  Copyright (c) 2019, The OpenThread Authors.
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -35,13 +35,13 @@
 #ifndef PLATFORM_QORVO_H_
 #define PLATFORM_QORVO_H_
 
-#include <openthread/config.h>
 #include <openthread-core-config.h>
 
+#include <stdbool.h>
 #include <stdint.h>
 
-typedef void     (*qorvoPlatPollFunction_t)(uint8_t);
-typedef uint8_t  (*qorvoPlatGotoSleepCheckCallback_t) (void);
+typedef void (*qorvoPlatPollFunction_t)(uint8_t);
+typedef uint8_t (*qorvoPlatGotoSleepCheckCallback_t)(void);
 
 /**
  * This function registers a callback to a file descriptor.
@@ -76,4 +76,4 @@ void qorvoPlatInit(qorvoPlatGotoSleepCheckCallback_t gotoSleepCheckCallback);
  */
 void qorvoPlatMainLoop(bool canGoToSleep);
 
-#endif  // PLATFORM_QORVO_H_
+#endif // PLATFORM_QORVO_H_

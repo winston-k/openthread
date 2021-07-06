@@ -33,389 +33,180 @@
 
 #include "cli.hpp"
 
-#ifdef OTDLL
-#include <assert.h>
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
-#include "mac/channel_mask.hpp"
-#include "utils/parse_cmdline.hpp"
-#include "utils/wrap_string.h"
+#include <string.h>
 
-#include <openthread/commissioner.h>
+#include <openthread/diag.h>
+#include <openthread/dns.h>
 #include <openthread/icmp6.h>
-#include <openthread/joiner.h>
 #include <openthread/link.h>
+#include <openthread/logging.h>
+#include <openthread/ncp.h>
 #include <openthread/thread.h>
-#if OPENTHREAD_CONFIG_ENABLE_TIME_SYNC
+#include <openthread/platform/uart.h>
+#if OPENTHREAD_CONFIG_TIME_SYNC_ENABLE
 #include <openthread/network_time.h>
 #endif
-
 #if OPENTHREAD_FTD
 #include <openthread/dataset_ftd.h>
 #include <openthread/thread_ftd.h>
 #endif
-
-#if OPENTHREAD_ENABLE_BORDER_ROUTER
+#if OPENTHREAD_CONFIG_BORDER_ROUTER_ENABLE
 #include <openthread/border_router.h>
 #endif
-#if OPENTHREAD_ENABLE_SERVICE
+#if OPENTHREAD_CONFIG_TMF_NETDATA_SERVICE_ENABLE
 #include <openthread/server.h>
 #endif
-
-#ifndef OTDLL
-#include <openthread/diag.h>
-#include <openthread/icmp6.h>
-#include <openthread/platform/uart.h>
-
-#include "common/new.hpp"
-#include "net/ip6.hpp"
+#if OPENTHREAD_CONFIG_CHILD_SUPERVISION_ENABLE
+#include <openthread/child_supervision.h>
 #endif
-
-#include "cli_dataset.hpp"
-
-#if OPENTHREAD_ENABLE_APPLICATION_COAP
-#include "cli_coap.hpp"
+#if OPENTHREAD_CONFIG_PLATFORM_NETIF_ENABLE
+#include <openthread/platform/misc.h>
 #endif
-
-#if OPENTHREAD_ENABLE_APPLICATION_COAP_SECURE
-#include "cli_coap_secure.hpp"
+#if (OPENTHREAD_CONFIG_THREAD_VERSION >= OT_THREAD_VERSION_1_2)
+#include <openthread/backbone_router.h>
+#if OPENTHREAD_FTD && OPENTHREAD_CONFIG_BACKBONE_ROUTER_ENABLE
+#include <openthread/backbone_router_ftd.h>
 #endif
-
-#if OPENTHREAD_ENABLE_CHANNEL_MANAGER && OPENTHREAD_FTD
+#if OPENTHREAD_CONFIG_MLE_LINK_METRICS_ENABLE
+#include <openthread/link_metrics.h>
+#endif
+#endif
+#if OPENTHREAD_CONFIG_CHANNEL_MANAGER_ENABLE && OPENTHREAD_FTD
 #include <openthread/channel_manager.h>
 #endif
-
-#if OPENTHREAD_ENABLE_CHANNEL_MONITOR
+#if OPENTHREAD_CONFIG_CHANNEL_MONITOR_ENABLE
 #include <openthread/channel_monitor.h>
 #endif
-
 #if (OPENTHREAD_CONFIG_LOG_OUTPUT == OPENTHREAD_CONFIG_LOG_OUTPUT_DEBUG_UART) && OPENTHREAD_POSIX
 #include <openthread/platform/debug_uart.h>
 #endif
 
-#include "cli_server.hpp"
 #include "common/encoding.hpp"
+#include "common/new.hpp"
+#include "common/string.hpp"
+#include "mac/channel_mask.hpp"
+#include "net/ip6.hpp"
+#include "utils/otns.hpp"
+#include "utils/parse_cmdline.hpp"
 
 using ot::Encoding::BigEndian::HostSwap16;
 using ot::Encoding::BigEndian::HostSwap32;
 
-namespace ot {
+using ot::Utils::CmdLineParser::ParseAsBool;
+using ot::Utils::CmdLineParser::ParseAsHexString;
+using ot::Utils::CmdLineParser::ParseAsInt8;
+using ot::Utils::CmdLineParser::ParseAsIp6Address;
+using ot::Utils::CmdLineParser::ParseAsIp6Prefix;
+using ot::Utils::CmdLineParser::ParseAsUint16;
+using ot::Utils::CmdLineParser::ParseAsUint32;
+using ot::Utils::CmdLineParser::ParseAsUint64;
+using ot::Utils::CmdLineParser::ParseAsUint8;
 
+namespace ot {
 namespace Cli {
 
-const struct Command Interpreter::sCommands[] = {
-    {"help", &Interpreter::ProcessHelp},
-    {"autostart", &Interpreter::ProcessAutoStart},
-    {"bufferinfo", &Interpreter::ProcessBufferInfo},
-    {"channel", &Interpreter::ProcessChannel},
-#if OPENTHREAD_FTD
-    {"child", &Interpreter::ProcessChild},
-    {"childmax", &Interpreter::ProcessChildMax},
-#endif
-    {"childtimeout", &Interpreter::ProcessChildTimeout},
-#if OPENTHREAD_ENABLE_APPLICATION_COAP
-    {"coap", &Interpreter::ProcessCoap},
-#endif
-#if OPENTHREAD_ENABLE_APPLICATION_COAP_SECURE
-    {"coaps", &Interpreter::ProcessCoapSecure},
-#endif
-#if OPENTHREAD_ENABLE_COMMISSIONER && OPENTHREAD_FTD
-    {"commissioner", &Interpreter::ProcessCommissioner},
-#endif
-#if OPENTHREAD_FTD
-    {"contextreusedelay", &Interpreter::ProcessContextIdReuseDelay},
-#endif
-    {"counters", &Interpreter::ProcessCounters},
-    {"dataset", &Interpreter::ProcessDataset},
-#if OPENTHREAD_FTD
-    {"delaytimermin", &Interpreter::ProcessDelayTimerMin},
-#endif
-#if OPENTHREAD_ENABLE_DIAG
-    {"diag", &Interpreter::ProcessDiag},
-#endif
-    {"discover", &Interpreter::ProcessDiscover},
-#if OPENTHREAD_ENABLE_DNS_CLIENT
-    {"dns", &Interpreter::ProcessDns},
-#endif
-#if OPENTHREAD_FTD
-    {"eidcache", &Interpreter::ProcessEidCache},
-#endif
-    {"eui64", &Interpreter::ProcessEui64},
-#if OPENTHREAD_POSIX
-    {"exit", &Interpreter::ProcessExit},
-#endif
-#if (OPENTHREAD_CONFIG_LOG_OUTPUT == OPENTHREAD_CONFIG_LOG_OUTPUT_DEBUG_UART) && OPENTHREAD_POSIX
-    {"logfilename", &Interpreter::ProcessLogFilename},
-#endif
-    {"extaddr", &Interpreter::ProcessExtAddress},
-    {"extpanid", &Interpreter::ProcessExtPanId},
-    {"factoryreset", &Interpreter::ProcessFactoryReset},
-    {"ifconfig", &Interpreter::ProcessIfconfig},
-#ifdef OTDLL
-    {"instance", &Interpreter::ProcessInstance},
-    {"instancelist", &Interpreter::ProcessInstanceList},
-#endif
-    {"ipaddr", &Interpreter::ProcessIpAddr},
-#ifndef OTDLL
-    {"ipmaddr", &Interpreter::ProcessIpMulticastAddr},
-#endif
-#if OPENTHREAD_ENABLE_JOINER
-    {"joiner", &Interpreter::ProcessJoiner},
-    {"joinerid", &Interpreter::ProcessJoinerId},
-#endif
-#if OPENTHREAD_FTD
-    {"joinerport", &Interpreter::ProcessJoinerPort},
-#endif
-    {"keysequence", &Interpreter::ProcessKeySequence},
-    {"leaderdata", &Interpreter::ProcessLeaderData},
-#if OPENTHREAD_FTD
-    {"leaderpartitionid", &Interpreter::ProcessLeaderPartitionId},
-    {"leaderweight", &Interpreter::ProcessLeaderWeight},
-#endif
-#if OPENTHREAD_ENABLE_MAC_FILTER
-    {"macfilter", &Interpreter::ProcessMacFilter},
-#endif
-    {"masterkey", &Interpreter::ProcessMasterKey},
-    {"mode", &Interpreter::ProcessMode},
-#if OPENTHREAD_FTD
-    {"neighbor", &Interpreter::ProcessNeighbor},
-#endif
-#if OPENTHREAD_ENABLE_BORDER_ROUTER || OPENTHREAD_ENABLE_SERVICE
-    {"netdataregister", &Interpreter::ProcessNetworkDataRegister},
-#endif
-#if OPENTHREAD_ENABLE_SERVICE
-    {"netdatashow", &Interpreter::ProcessNetworkDataShow},
-#endif
-#if OPENTHREAD_FTD || OPENTHREAD_ENABLE_MTD_NETWORK_DIAGNOSTIC
-    {"networkdiagnostic", &Interpreter::ProcessNetworkDiagnostic},
-#endif // OPENTHREAD_FTD || OPENTHREAD_ENABLE_MTD_NETWORK_DIAGNOSTIC
-#if OPENTHREAD_FTD
-    {"networkidtimeout", &Interpreter::ProcessNetworkIdTimeout},
-#endif
-    {"networkname", &Interpreter::ProcessNetworkName},
-#if OPENTHREAD_CONFIG_ENABLE_TIME_SYNC
-    {"networktime", &Interpreter::ProcessNetworkTime},
-#endif
-    {"panid", &Interpreter::ProcessPanId},
-    {"parent", &Interpreter::ProcessParent},
-#if OPENTHREAD_FTD
-    {"parentpriority", &Interpreter::ProcessParentPriority},
-#endif
-#ifndef OTDLL
-    {"ping", &Interpreter::ProcessPing},
-#endif
-    {"pollperiod", &Interpreter::ProcessPollPeriod},
-#ifndef OTDLL
-    {"promiscuous", &Interpreter::ProcessPromiscuous},
-#endif
-#if OPENTHREAD_ENABLE_BORDER_ROUTER
-    {"prefix", &Interpreter::ProcessPrefix},
-#endif
-#if OPENTHREAD_FTD
-    {"pskc", &Interpreter::ProcessPSKc},
-    {"releaserouterid", &Interpreter::ProcessReleaseRouterId},
-#endif
-    {"reset", &Interpreter::ProcessReset},
-    {"rloc16", &Interpreter::ProcessRloc16},
-#if OPENTHREAD_ENABLE_BORDER_ROUTER
-    {"route", &Interpreter::ProcessRoute},
-#endif
-#if OPENTHREAD_FTD
-    {"router", &Interpreter::ProcessRouter},
-    {"routerdowngradethreshold", &Interpreter::ProcessRouterDowngradeThreshold},
-    {"routerrole", &Interpreter::ProcessRouterRole},
-    {"routerselectionjitter", &Interpreter::ProcessRouterSelectionJitter},
-    {"routerupgradethreshold", &Interpreter::ProcessRouterUpgradeThreshold},
-#endif
-    {"scan", &Interpreter::ProcessScan},
-#if OPENTHREAD_ENABLE_SERVICE
-    {"service", &Interpreter::ProcessService},
-#endif
-    {"singleton", &Interpreter::ProcessSingleton},
-#if OPENTHREAD_ENABLE_SNTP_CLIENT
-    {"sntp", &Interpreter::ProcessSntp},
-#endif
-    {"state", &Interpreter::ProcessState},
-    {"thread", &Interpreter::ProcessThread},
-#ifndef OTDLL
-    {"txpower", &Interpreter::ProcessTxPower},
-    {"udp", &Interpreter::ProcessUdp},
-#endif
-    {"version", &Interpreter::ProcessVersion},
-};
+constexpr Interpreter::Command Interpreter::sCommands[];
 
-#ifdef OTDLL
-uint32_t otPlatRandomGet(void)
-{
-    return (uint32_t)rand();
-}
-#else
-void otFreeMemory(const void *)
-{
-    // No-op on systems running OpenThread in-proc
-}
-#endif
-
-template <class T> class otPtr
-{
-    T *ptr;
-
-public:
-    otPtr(T *_ptr)
-        : ptr(_ptr)
-    {
-    }
-    ~otPtr()
-    {
-        if (ptr)
-        {
-            otFreeMemory(ptr);
-        }
-    }
-    T *get() const { return ptr; }
-       operator T *() const { return ptr; }
-    T *operator->() const { return ptr; }
-};
-
-typedef otPtr<const otMacCounters>  otMacCountersPtr;
-typedef otPtr<const otMleCounters>  otMleCountersPtr;
-typedef otPtr<const otNetifAddress> otNetifAddressPtr;
-typedef otPtr<const uint8_t>        otBufferPtr;
-typedef otPtr<const char>           otStringPtr;
+Interpreter *Interpreter::sInterpreter = nullptr;
 
 Interpreter::Interpreter(Instance *aInstance)
-    : mUserCommands(NULL)
+    : mInstance(aInstance)
+    , mUserCommands(nullptr)
     , mUserCommandsLength(0)
-    , mServer(NULL)
-#ifdef OTDLL
-    , mApiInstance(otApiInit())
-    , mInstanceIndex(0)
-#else
-    , mLength(8)
-    , mCount(1)
-    , mInterval(1000)
-    , mPingTimer(*aInstance, &Interpreter::s_HandlePingTimer, this)
-#if OPENTHREAD_ENABLE_DNS_CLIENT
-    , mResolvingInProgress(0)
-#endif
-    , mUdp(*this)
+    , mPingLength(kDefaultPingLength)
+    , mPingCount(kDefaultPingCount)
+    , mPingInterval(kDefaultPingInterval)
+    , mPingHopLimit(0)
+    , mPingAllowZeroHopLimit(false)
+    , mPingIdentifier(0)
+    , mPingTimer(*aInstance, Interpreter::HandlePingTimer)
+#if OPENTHREAD_CONFIG_SNTP_CLIENT_ENABLE
+    , mSntpQueryingInProgress(false)
 #endif
     , mDataset(*this)
-#if OPENTHREAD_ENABLE_APPLICATION_COAP
+    , mNetworkData(*this)
+    , mUdp(*this)
+#if OPENTHREAD_CONFIG_COAP_API_ENABLE
     , mCoap(*this)
 #endif
-#if OPENTHREAD_ENABLE_APPLICATION_COAP_SECURE
+#if OPENTHREAD_CONFIG_COAP_SECURE_API_ENABLE
     , mCoapSecure(*this)
 #endif
-    , mInstance(aInstance)
+#if OPENTHREAD_CONFIG_COMMISSIONER_ENABLE && OPENTHREAD_FTD
+    , mCommissioner(*this)
+#endif
+#if OPENTHREAD_CONFIG_JOINER_ENABLE
+    , mJoiner(*this)
+#endif
+#if OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE
+    , mSrpClient(*this)
+#endif
+#if OPENTHREAD_CONFIG_SRP_SERVER_ENABLE
+    , mSrpServer(*this)
+#endif
 {
-#ifdef OTDLL
-    // On Windows, mInstance represents the current selected otInstance
-    // which should be NULL now.
-    assert(aInstance = NULL);
-    assert(mApiInstance);
-    CacheInstances();
-#else
-#if OPENTHREAD_FTD || OPENTHREAD_ENABLE_MTD_NETWORK_DIAGNOSTIC
-    otThreadSetReceiveDiagnosticGetCallback(mInstance, &Interpreter::s_HandleDiagnosticGetResponse, this);
+#if OPENTHREAD_FTD
+    otThreadSetDiscoveryRequestCallback(mInstance, &Interpreter::HandleDiscoveryRequest, this);
 #endif
 
-    mIcmpHandler.mReceiveCallback = Interpreter::s_HandleIcmpReceive;
+    mIcmpHandler.mReceiveCallback = Interpreter::HandleIcmpReceive;
     mIcmpHandler.mContext         = this;
-    otIcmp6RegisterHandler(mInstance, &mIcmpHandler);
-
-#if OPENTHREAD_ENABLE_DNS_CLIENT
-    memset(mResolvingHostname, 0, sizeof(mResolvingHostname));
-#endif // OPENTHREAD_ENABLE_DNS_CLIENT
-
-#endif
+    IgnoreError(otIcmp6RegisterHandler(mInstance, &mIcmpHandler));
 }
 
-int Interpreter::Hex2Bin(const char *aHex, uint8_t *aBin, uint16_t aBinLength)
+void Interpreter::OutputResult(otError aError)
 {
-    size_t      hexLength = strlen(aHex);
-    const char *hexEnd    = aHex + hexLength;
-    uint8_t *   cur       = aBin;
-    uint8_t     numChars  = hexLength & 1;
-    uint8_t     byte      = 0;
-    int         rval;
-
-    VerifyOrExit((hexLength + 1) / 2 <= aBinLength, rval = -1);
-
-    while (aHex < hexEnd)
+    switch (aError)
     {
-        if ('A' <= *aHex && *aHex <= 'F')
-        {
-            byte |= 10 + (*aHex - 'A');
-        }
-        else if ('a' <= *aHex && *aHex <= 'f')
-        {
-            byte |= 10 + (*aHex - 'a');
-        }
-        else if ('0' <= *aHex && *aHex <= '9')
-        {
-            byte |= *aHex - '0';
-        }
-        else
-        {
-            ExitNow(rval = -1);
-        }
+    case OT_ERROR_NONE:
+        OutputLine("Done");
+        break;
 
-        aHex++;
-        numChars++;
+    case OT_ERROR_PENDING:
+        break;
 
-        if (numChars >= 2)
-        {
-            numChars = 0;
-            *cur++   = byte;
-            byte     = 0;
-        }
-        else
-        {
-            byte <<= 4;
-        }
+    default:
+        OutputLine("Error %d: %s", aError, otThreadErrorToString(aError));
     }
+}
 
-    rval = static_cast<int>(cur - aBin);
+void Interpreter::OutputBytes(const uint8_t *aBytes, uint16_t aLength)
+{
+    for (uint16_t i = 0; i < aLength; i++)
+    {
+        OutputFormat("%02x", aBytes[i]);
+    }
+}
+
+void Interpreter::OutputEnabledDisabledStatus(bool aEnabled)
+{
+    OutputLine(aEnabled ? "Enabled" : "Disabled");
+}
+
+int Interpreter::OutputIp6Address(const otIp6Address &aAddress)
+{
+    return OutputFormat(
+        "%x:%x:%x:%x:%x:%x:%x:%x", HostSwap16(aAddress.mFields.m16[0]), HostSwap16(aAddress.mFields.m16[1]),
+        HostSwap16(aAddress.mFields.m16[2]), HostSwap16(aAddress.mFields.m16[3]), HostSwap16(aAddress.mFields.m16[4]),
+        HostSwap16(aAddress.mFields.m16[5]), HostSwap16(aAddress.mFields.m16[6]), HostSwap16(aAddress.mFields.m16[7]));
+}
+
+otError Interpreter::ParseJoinerDiscerner(char *aString, otJoinerDiscerner &aDiscerner)
+{
+    otError error     = OT_ERROR_NONE;
+    char *  separator = strstr(aString, "/");
+
+    VerifyOrExit(separator != nullptr, error = OT_ERROR_NOT_FOUND);
+
+    SuccessOrExit(error = ParseAsUint8(separator + 1, aDiscerner.mLength));
+    VerifyOrExit(aDiscerner.mLength > 0 && aDiscerner.mLength <= 64, error = OT_ERROR_INVALID_ARGS);
+    *separator = '\0';
+    error      = ParseAsUint64(aString, aDiscerner.mValue);
 
 exit:
-    return rval;
-}
-
-void Interpreter::AppendResult(otError aError) const
-{
-    if (aError == OT_ERROR_NONE)
-    {
-        mServer->OutputFormat("Done\r\n");
-    }
-    else
-    {
-        mServer->OutputFormat("Error %d: %s\r\n", aError, otThreadErrorToString(aError));
-    }
-}
-
-void Interpreter::OutputBytes(const uint8_t *aBytes, uint8_t aLength) const
-{
-    for (int i = 0; i < aLength; i++)
-    {
-        mServer->OutputFormat("%02x", aBytes[i]);
-    }
-}
-
-otError Interpreter::ParseLong(char *argv, long &value)
-{
-    char *endptr;
-    value = strtol(argv, &endptr, 0);
-    return (*endptr == '\0') ? OT_ERROR_NONE : OT_ERROR_PARSE;
-}
-
-otError Interpreter::ParseUnsignedLong(char *argv, unsigned long &value)
-{
-    char *endptr;
-    value = strtoul(argv, &endptr, 0);
-    return (*endptr == '\0') ? OT_ERROR_NONE : OT_ERROR_PARSE;
+    return error;
 }
 
 otError Interpreter::ParsePingInterval(const char *aString, uint32_t &aInterval)
@@ -447,14 +238,14 @@ otError Interpreter::ParsePingInterval(const char *aString, uint32_t &aInterval)
         else if (*aString == '.')
         {
             // Accept only one dot character.
-            VerifyOrExit(factor == msFactor, error = OT_ERROR_PARSE);
+            VerifyOrExit(factor == msFactor, error = OT_ERROR_INVALID_ARGS);
 
             // Start analyzing hundreds of milliseconds.
             factor /= 10;
         }
         else
         {
-            ExitNow(error = OT_ERROR_PARSE);
+            ExitNow(error = OT_ERROR_INVALID_ARGS);
         }
 
         aString++;
@@ -464,117 +255,451 @@ exit:
     return error;
 }
 
-void Interpreter::ProcessHelp(int argc, char *argv[])
+otError Interpreter::ProcessHelp(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
-    for (unsigned int i = 0; i < OT_ARRAY_LENGTH(sCommands); i++)
+    for (const Command &command : sCommands)
     {
-        mServer->OutputFormat("%s\r\n", sCommands[i].mName);
+        OutputLine(command.mName);
     }
 
-    for (unsigned int i = 0; i < mUserCommandsLength; i++)
+    for (uint8_t i = 0; i < mUserCommandsLength; i++)
     {
-        mServer->OutputFormat("%s\r\n", mUserCommands[i].mName);
+        OutputLine("%s", mUserCommands[i].mName);
     }
+
+    return OT_ERROR_NONE;
 }
 
-void Interpreter::ProcessAutoStart(int argc, char *argv[])
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+otError Interpreter::ProcessBorderRouting(uint8_t aArgsLength, char *aArgs[])
 {
-    otError error = OT_ERROR_NONE;
+    otError error  = OT_ERROR_NONE;
+    bool    enable = false;
 
-    if (argc == 0)
+    VerifyOrExit(aArgsLength == 1, error = OT_ERROR_INVALID_ARGS);
+
+    if (strcmp(aArgs[0], "enable") == 0)
     {
-        if (otThreadGetAutoStart(mInstance))
-        {
-            mServer->OutputFormat("Enabled\r\n");
-        }
-        else
-        {
-            mServer->OutputFormat("Disabled\r\n");
-        }
+        enable = true;
     }
-    else if (strcmp(argv[0], "enable") == 0)
+    else if (strcmp(aArgs[0], "disable") == 0)
     {
-        error = otThreadSetAutoStart(mInstance, true);
-    }
-    else if (strcmp(argv[0], "disable") == 0)
-    {
-        error = otThreadSetAutoStart(mInstance, false);
+        enable = false;
     }
     else
     {
-        error = OT_ERROR_INVALID_ARGS;
+        ExitNow(error = OT_ERROR_INVALID_COMMAND);
     }
 
-    AppendResult(error);
+    SuccessOrExit(error = otBorderRoutingSetEnabled(mInstance, enable));
+
+exit:
+    return error;
+}
+#endif
+
+#if (OPENTHREAD_CONFIG_THREAD_VERSION >= OT_THREAD_VERSION_1_2)
+otError Interpreter::ProcessBackboneRouter(uint8_t aArgsLength, char *aArgs[])
+{
+    OT_UNUSED_VARIABLE(aArgs);
+    otError                error = OT_ERROR_INVALID_COMMAND;
+    otBackboneRouterConfig config;
+
+    if (aArgsLength == 0)
+    {
+        if (otBackboneRouterGetPrimary(mInstance, &config) == OT_ERROR_NONE)
+        {
+            OutputLine("BBR Primary:");
+            OutputLine("server16: 0x%04X", config.mServer16);
+            OutputLine("seqno:    %d", config.mSequenceNumber);
+            OutputLine("delay:    %d secs", config.mReregistrationDelay);
+            OutputLine("timeout:  %d secs", config.mMlrTimeout);
+        }
+        else
+        {
+            OutputLine("BBR Primary: None");
+        }
+
+        error = OT_ERROR_NONE;
+    }
+#if OPENTHREAD_FTD && OPENTHREAD_CONFIG_BACKBONE_ROUTER_ENABLE
+    else
+    {
+#if OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE
+        if (strcmp(aArgs[0], "mgmt") == 0)
+        {
+            if (aArgsLength < 2)
+            {
+                ExitNow(error = OT_ERROR_INVALID_COMMAND);
+            }
+#if OPENTHREAD_CONFIG_BACKBONE_ROUTER_DUA_NDPROXYING_ENABLE
+            else if (strcmp(aArgs[1], "dua") == 0)
+            {
+                uint8_t                   status;
+                otIp6InterfaceIdentifier *mlIid = nullptr;
+                otIp6InterfaceIdentifier  iid;
+
+                VerifyOrExit((aArgsLength == 3 || aArgsLength == 4), error = OT_ERROR_INVALID_ARGS);
+
+                SuccessOrExit(error = ParseAsUint8(aArgs[2], status));
+
+                if (aArgsLength == 4)
+                {
+                    SuccessOrExit(error = ParseAsHexString(aArgs[3], iid.mFields.m8));
+                    mlIid = &iid;
+                }
+
+                otBackboneRouterConfigNextDuaRegistrationResponse(mInstance, mlIid, status);
+                ExitNow();
+            }
+#endif
+#if OPENTHREAD_CONFIG_BACKBONE_ROUTER_MULTICAST_ROUTING_ENABLE
+            else if (strcmp(aArgs[1], "mlr") == 0)
+            {
+                error = ProcessBackboneRouterMgmtMlr(aArgsLength - 2, aArgs + 2);
+                ExitNow();
+            }
+#endif
+        }
+#endif // OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE
+        SuccessOrExit(error = ProcessBackboneRouterLocal(aArgsLength, aArgs));
+    }
+
+exit:
+#endif // OPENTHREAD_FTD && OPENTHREAD_CONFIG_BACKBONE_ROUTER_ENABLE
+    return error;
 }
 
-void Interpreter::ProcessBufferInfo(int argc, char *argv[])
+#if OPENTHREAD_FTD && OPENTHREAD_CONFIG_BACKBONE_ROUTER_ENABLE
+
+#if OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE && OPENTHREAD_CONFIG_BACKBONE_ROUTER_MULTICAST_ROUTING_ENABLE
+otError Interpreter::ProcessBackboneRouterMgmtMlr(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
+    otError error = OT_ERROR_INVALID_COMMAND;
+
+    VerifyOrExit(aArgsLength >= 1);
+
+    if (!strcmp(aArgs[0], "listener"))
+    {
+        if (aArgsLength == 1)
+        {
+            PrintMulticastListenersTable();
+            error = OT_ERROR_NONE;
+        }
+        else if (!strcmp(aArgs[1], "clear"))
+        {
+            otBackboneRouterMulticastListenerClear(mInstance);
+            error = OT_ERROR_NONE;
+        }
+        else if (!strcmp(aArgs[1], "add"))
+        {
+            otIp6Address address;
+            uint32_t     timeout = 0;
+
+            VerifyOrExit(aArgsLength == 3 || aArgsLength == 4, error = OT_ERROR_INVALID_ARGS);
+
+            SuccessOrExit(error = ParseAsIp6Address(aArgs[2], address));
+
+            if (aArgsLength == 4)
+            {
+                SuccessOrExit(error = ParseAsUint32(aArgs[3], timeout));
+            }
+
+            error = otBackboneRouterMulticastListenerAdd(mInstance, &address, timeout);
+        }
+    }
+    else if (!strcmp(aArgs[0], "response"))
+    {
+        uint8_t status;
+
+        VerifyOrExit(aArgsLength == 2, error = OT_ERROR_INVALID_ARGS);
+        SuccessOrExit(error = ParseAsUint8(aArgs[1], status));
+
+        otBackboneRouterConfigNextMulticastListenerRegistrationResponse(mInstance, status);
+    }
+    else
+    {
+        error = OT_ERROR_INVALID_COMMAND;
+    }
+
+exit:
+    return error;
+}
+
+void Interpreter::PrintMulticastListenersTable(void)
+{
+    otBackboneRouterMulticastListenerIterator iter = OT_BACKBONE_ROUTER_MULTICAST_LISTENER_ITERATOR_INIT;
+    otBackboneRouterMulticastListenerInfo     listenerInfo;
+
+    while (otBackboneRouterMulticastListenerGetNext(mInstance, &iter, &listenerInfo) == OT_ERROR_NONE)
+    {
+        OutputIp6Address(listenerInfo.mAddress);
+        OutputLine(" %u", listenerInfo.mTimeout);
+    }
+}
+
+#endif // OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE && OPENTHREAD_CONFIG_BACKBONE_ROUTER_MULTICAST_ROUTING_ENABLE
+
+otError Interpreter::ProcessBackboneRouterLocal(uint8_t aArgsLength, char *aArgs[])
+{
+    otError                error = OT_ERROR_NONE;
+    otBackboneRouterConfig config;
+
+    if (strcmp(aArgs[0], "disable") == 0)
+    {
+        otBackboneRouterSetEnabled(mInstance, false);
+    }
+    else if (strcmp(aArgs[0], "enable") == 0)
+    {
+        otBackboneRouterSetEnabled(mInstance, true);
+    }
+    else if (strcmp(aArgs[0], "jitter") == 0)
+    {
+        if (aArgsLength == 1)
+        {
+            OutputLine("%d", otBackboneRouterGetRegistrationJitter(mInstance));
+        }
+        else if (aArgsLength == 2)
+        {
+            uint8_t jitter;
+
+            SuccessOrExit(error = ParseAsUint8(aArgs[1], jitter));
+            otBackboneRouterSetRegistrationJitter(mInstance, jitter);
+        }
+    }
+    else if (strcmp(aArgs[0], "register") == 0)
+    {
+        SuccessOrExit(error = otBackboneRouterRegister(mInstance));
+    }
+    else if (strcmp(aArgs[0], "state") == 0)
+    {
+        switch (otBackboneRouterGetState(mInstance))
+        {
+        case OT_BACKBONE_ROUTER_STATE_DISABLED:
+            OutputLine("Disabled");
+            break;
+        case OT_BACKBONE_ROUTER_STATE_SECONDARY:
+            OutputLine("Secondary");
+            break;
+        case OT_BACKBONE_ROUTER_STATE_PRIMARY:
+            OutputLine("Primary");
+            break;
+        }
+    }
+    else if (strcmp(aArgs[0], "config") == 0)
+    {
+        otBackboneRouterGetConfig(mInstance, &config);
+
+        if (aArgsLength == 1)
+        {
+            OutputLine("seqno:    %d", config.mSequenceNumber);
+            OutputLine("delay:    %d secs", config.mReregistrationDelay);
+            OutputLine("timeout:  %d secs", config.mMlrTimeout);
+        }
+        else
+        {
+            // Set local Backbone Router configuration.
+            for (int argCur = 1; argCur < aArgsLength; argCur++)
+            {
+                VerifyOrExit(argCur + 1 < aArgsLength, error = OT_ERROR_INVALID_ARGS);
+
+                if (strcmp(aArgs[argCur], "seqno") == 0)
+                {
+                    SuccessOrExit(error = ParseAsUint8(aArgs[++argCur], config.mSequenceNumber));
+                }
+                else if (strcmp(aArgs[argCur], "delay") == 0)
+                {
+                    SuccessOrExit(error = ParseAsUint16(aArgs[++argCur], config.mReregistrationDelay));
+                }
+                else if (strcmp(aArgs[argCur], "timeout") == 0)
+                {
+                    SuccessOrExit(error = ParseAsUint32(aArgs[++argCur], config.mMlrTimeout));
+                }
+                else
+                {
+                    ExitNow(error = OT_ERROR_INVALID_ARGS);
+                }
+            }
+
+            SuccessOrExit(error = otBackboneRouterSetConfig(mInstance, &config));
+        }
+    }
+    else
+    {
+        error = OT_ERROR_INVALID_COMMAND;
+    }
+
+exit:
+    return error;
+}
+#endif // OPENTHREAD_FTD && OPENTHREAD_CONFIG_BACKBONE_ROUTER_ENABLE
+
+otError Interpreter::ProcessDomainName(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    if (aArgsLength == 0)
+    {
+        OutputLine("%s", otThreadGetDomainName(mInstance));
+    }
+    else
+    {
+        SuccessOrExit(error = otThreadSetDomainName(mInstance, aArgs[0]));
+    }
+
+exit:
+    return error;
+}
+
+#if OPENTHREAD_CONFIG_DUA_ENABLE
+otError Interpreter::ProcessDua(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    VerifyOrExit(aArgsLength >= 1 && strcmp(aArgs[0], "iid") == 0, error = OT_ERROR_INVALID_COMMAND);
+
+    switch (aArgsLength)
+    {
+    case 1:
+    {
+        const otIp6InterfaceIdentifier *iid = otThreadGetFixedDuaInterfaceIdentifier(mInstance);
+
+        if (iid != nullptr)
+        {
+            OutputBytes(iid->mFields.m8, sizeof(otIp6InterfaceIdentifier));
+            OutputLine("");
+        }
+        break;
+    }
+    case 2:
+        if (strcmp(aArgs[1], "clear") == 0)
+        {
+            SuccessOrExit(error = otThreadSetFixedDuaInterfaceIdentifier(mInstance, nullptr));
+        }
+        else
+        {
+            otIp6InterfaceIdentifier iid;
+
+            SuccessOrExit(error = ParseAsHexString(aArgs[1], iid.mFields.m8));
+            SuccessOrExit(error = otThreadSetFixedDuaInterfaceIdentifier(mInstance, &iid));
+        }
+        break;
+    default:
+        error = OT_ERROR_INVALID_ARGS;
+        break;
+    }
+
+exit:
+    return error;
+}
+#endif // OPENTHREAD_CONFIG_DUA_ENABLE
+
+#endif // (OPENTHREAD_CONFIG_THREAD_VERSION >= OT_THREAD_VERSION_1_2)
+
+otError Interpreter::ProcessBufferInfo(uint8_t aArgsLength, char *aArgs[])
+{
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
     otBufferInfo bufferInfo;
 
     otMessageGetBufferInfo(mInstance, &bufferInfo);
 
-    mServer->OutputFormat("total: %d\r\n", bufferInfo.mTotalBuffers);
-    mServer->OutputFormat("free: %d\r\n", bufferInfo.mFreeBuffers);
-    mServer->OutputFormat("6lo send: %d %d\r\n", bufferInfo.m6loSendMessages, bufferInfo.m6loSendBuffers);
-    mServer->OutputFormat("6lo reas: %d %d\r\n", bufferInfo.m6loReassemblyMessages, bufferInfo.m6loReassemblyBuffers);
-    mServer->OutputFormat("ip6: %d %d\r\n", bufferInfo.mIp6Messages, bufferInfo.mIp6Buffers);
-    mServer->OutputFormat("mpl: %d %d\r\n", bufferInfo.mMplMessages, bufferInfo.mMplBuffers);
-    mServer->OutputFormat("mle: %d %d\r\n", bufferInfo.mMleMessages, bufferInfo.mMleBuffers);
-    mServer->OutputFormat("arp: %d %d\r\n", bufferInfo.mArpMessages, bufferInfo.mArpBuffers);
-    mServer->OutputFormat("coap: %d %d\r\n", bufferInfo.mCoapMessages, bufferInfo.mCoapBuffers);
-    mServer->OutputFormat("coap secure: %d %d\r\n", bufferInfo.mCoapSecureMessages, bufferInfo.mCoapSecureBuffers);
-    mServer->OutputFormat("application coap: %d %d\r\n", bufferInfo.mApplicationCoapMessages,
-                          bufferInfo.mApplicationCoapBuffers);
+    OutputLine("total: %d", bufferInfo.mTotalBuffers);
+    OutputLine("free: %d", bufferInfo.mFreeBuffers);
+    OutputLine("6lo send: %d %d", bufferInfo.m6loSendMessages, bufferInfo.m6loSendBuffers);
+    OutputLine("6lo reas: %d %d", bufferInfo.m6loReassemblyMessages, bufferInfo.m6loReassemblyBuffers);
+    OutputLine("ip6: %d %d", bufferInfo.mIp6Messages, bufferInfo.mIp6Buffers);
+    OutputLine("mpl: %d %d", bufferInfo.mMplMessages, bufferInfo.mMplBuffers);
+    OutputLine("mle: %d %d", bufferInfo.mMleMessages, bufferInfo.mMleBuffers);
+    OutputLine("arp: %d %d", bufferInfo.mArpMessages, bufferInfo.mArpBuffers);
+    OutputLine("coap: %d %d", bufferInfo.mCoapMessages, bufferInfo.mCoapBuffers);
+    OutputLine("coap secure: %d %d", bufferInfo.mCoapSecureMessages, bufferInfo.mCoapSecureBuffers);
+    OutputLine("application coap: %d %d", bufferInfo.mApplicationCoapMessages, bufferInfo.mApplicationCoapBuffers);
 
-    AppendResult(OT_ERROR_NONE);
+    return OT_ERROR_NONE;
 }
 
-void Interpreter::ProcessChannel(int argc, char *argv[])
+otError Interpreter::ProcessCcaThreshold(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
-    long    value;
+    int8_t  cca;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        mServer->OutputFormat("%d\r\n", otLinkGetChannel(mInstance));
+        SuccessOrExit(error = otPlatRadioGetCcaEnergyDetectThreshold(mInstance, &cca));
+        OutputLine("%d dBm", cca);
     }
-#if OPENTHREAD_ENABLE_CHANNEL_MONITOR
-    else if (strcmp(argv[0], "monitor") == 0)
+    else
     {
-        if (argc == 1)
+        SuccessOrExit(error = ParseAsInt8(aArgs[0], cca));
+        SuccessOrExit(error = otPlatRadioSetCcaEnergyDetectThreshold(mInstance, cca));
+    }
+
+exit:
+    return error;
+}
+
+otError Interpreter::ProcessChannel(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+    uint8_t channel;
+
+    if (aArgsLength == 0)
+    {
+        OutputLine("%d", otLinkGetChannel(mInstance));
+    }
+    else if (strcmp(aArgs[0], "supported") == 0)
+    {
+        OutputLine("0x%x", otPlatRadioGetSupportedChannelMask(mInstance));
+    }
+    else if (strcmp(aArgs[0], "preferred") == 0)
+    {
+        OutputLine("0x%x", otPlatRadioGetPreferredChannelMask(mInstance));
+    }
+#if OPENTHREAD_CONFIG_CHANNEL_MONITOR_ENABLE
+    else if (strcmp(aArgs[0], "monitor") == 0)
+    {
+        if (aArgsLength == 1)
         {
-            mServer->OutputFormat("enabled: %d\r\n", otChannelMonitorIsEnabled(mInstance));
+            OutputLine("enabled: %d", otChannelMonitorIsEnabled(mInstance));
             if (otChannelMonitorIsEnabled(mInstance))
             {
-                mServer->OutputFormat("interval: %lu\r\n", otChannelMonitorGetSampleInterval(mInstance));
-                mServer->OutputFormat("threshold: %d\r\n", otChannelMonitorGetRssiThreshold(mInstance));
-                mServer->OutputFormat("window: %lu\r\n", otChannelMonitorGetSampleWindow(mInstance));
-                mServer->OutputFormat("count: %lu\r\n", otChannelMonitorGetSampleCount(mInstance));
+                uint32_t channelMask = otLinkGetSupportedChannelMask(mInstance);
+                uint8_t  channelNum  = sizeof(channelMask) * CHAR_BIT;
 
-                mServer->OutputFormat("occupancies:\r\n");
-                for (uint8_t channel = OT_RADIO_CHANNEL_MIN; channel <= OT_RADIO_CHANNEL_MAX; channel++)
+                OutputLine("interval: %u", otChannelMonitorGetSampleInterval(mInstance));
+                OutputLine("threshold: %d", otChannelMonitorGetRssiThreshold(mInstance));
+                OutputLine("window: %u", otChannelMonitorGetSampleWindow(mInstance));
+                OutputLine("count: %u", otChannelMonitorGetSampleCount(mInstance));
+
+                OutputLine("occupancies:");
+                for (channel = 0; channel < channelNum; channel++)
                 {
-                    uint32_t occupancy = otChannelMonitorGetChannelOccupancy(mInstance, channel);
+                    uint32_t occupancy = 0;
 
-                    mServer->OutputFormat("ch %d (0x%04x) ", channel, occupancy);
+                    if (!((1UL << channel) & channelMask))
+                    {
+                        continue;
+                    }
+
+                    occupancy = otChannelMonitorGetChannelOccupancy(mInstance, channel);
+
+                    OutputFormat("ch %d (0x%04x) ", channel, occupancy);
                     occupancy = (occupancy * 10000) / 0xffff;
-                    mServer->OutputFormat("%2d.%02d%% busy\r\n", occupancy / 100, occupancy % 100);
+                    OutputLine("%2d.%02d%% busy", occupancy / 100, occupancy % 100);
                 }
-                mServer->OutputFormat("\r\n");
+                OutputLine("");
             }
         }
-        else if (strcmp(argv[1], "start") == 0)
+        else if (strcmp(aArgs[1], "start") == 0)
         {
             error = otChannelMonitorSetEnabled(mInstance, true);
         }
-        else if (strcmp(argv[1], "stop") == 0)
+        else if (strcmp(aArgs[1], "stop") == 0)
         {
             error = otChannelMonitorSetEnabled(mInstance, false);
         }
@@ -583,111 +708,125 @@ void Interpreter::ProcessChannel(int argc, char *argv[])
             ExitNow(error = OT_ERROR_INVALID_ARGS);
         }
     }
-#endif
-#if OPENTHREAD_ENABLE_CHANNEL_MANAGER && OPENTHREAD_FTD
-    else if (strcmp(argv[0], "manager") == 0)
+#endif // OPENTHREAD_CONFIG_CHANNEL_MONITOR_ENABLE
+#if OPENTHREAD_CONFIG_CHANNEL_MANAGER_ENABLE && OPENTHREAD_FTD
+    else if (strcmp(aArgs[0], "manager") == 0)
     {
-        if (argc == 1)
+        if (aArgsLength == 1)
         {
-            mServer->OutputFormat("channel: %d\r\n", otChannelManagerGetRequestedChannel(mInstance));
-            mServer->OutputFormat("auto: %d\r\n", otChannelManagerGetAutoChannelSelectionEnabled(mInstance));
+            OutputLine("channel: %d", otChannelManagerGetRequestedChannel(mInstance));
+            OutputLine("auto: %d", otChannelManagerGetAutoChannelSelectionEnabled(mInstance));
 
             if (otChannelManagerGetAutoChannelSelectionEnabled(mInstance))
             {
                 Mac::ChannelMask supportedMask(otChannelManagerGetSupportedChannels(mInstance));
                 Mac::ChannelMask favoredMask(otChannelManagerGetFavoredChannels(mInstance));
 
-                mServer->OutputFormat("delay: %d\r\n", otChannelManagerGetDelay(mInstance));
-                mServer->OutputFormat("interval: %lu\r\n", otChannelManagerGetAutoChannelSelectionInterval(mInstance));
-                mServer->OutputFormat("supported: %s\r\n", supportedMask.ToString().AsCString());
-                mServer->OutputFormat("favored: %s\r\n", supportedMask.ToString().AsCString());
+                OutputLine("delay: %d", otChannelManagerGetDelay(mInstance));
+                OutputLine("interval: %u", otChannelManagerGetAutoChannelSelectionInterval(mInstance));
+                OutputLine("supported: %s", supportedMask.ToString().AsCString());
+                OutputLine("favored: %s", supportedMask.ToString().AsCString());
             }
         }
-        else if (strcmp(argv[1], "change") == 0)
+        else if (strcmp(aArgs[1], "change") == 0)
         {
-            VerifyOrExit(argc > 2, error = OT_ERROR_INVALID_ARGS);
-            SuccessOrExit(error = ParseLong(argv[2], value));
-            otChannelManagerRequestChannelChange(mInstance, static_cast<uint8_t>(value));
+            VerifyOrExit(aArgsLength > 2, error = OT_ERROR_INVALID_ARGS);
+            SuccessOrExit(error = ParseAsUint8(aArgs[2], channel));
+            otChannelManagerRequestChannelChange(mInstance, channel);
         }
-        else if (strcmp(argv[1], "select") == 0)
+#if OPENTHREAD_CONFIG_CHANNEL_MONITOR_ENABLE
+        else if (strcmp(aArgs[1], "select") == 0)
         {
-            VerifyOrExit(argc > 2, error = OT_ERROR_INVALID_ARGS);
-            SuccessOrExit(error = ParseLong(argv[2], value));
-            error = otChannelManagerRequestChannelSelect(mInstance, (value != 0) ? true : false);
+            bool enable;
+
+            VerifyOrExit(aArgsLength > 2, error = OT_ERROR_INVALID_ARGS);
+            SuccessOrExit(error = ParseAsBool(aArgs[2], enable));
+            error = otChannelManagerRequestChannelSelect(mInstance, enable);
         }
-        else if (strcmp(argv[1], "auto") == 0)
+#endif
+        else if (strcmp(aArgs[1], "auto") == 0)
         {
-            VerifyOrExit(argc > 2, error = OT_ERROR_INVALID_ARGS);
-            SuccessOrExit(error = ParseLong(argv[2], value));
-            otChannelManagerSetAutoChannelSelectionEnabled(mInstance, (value != 0) ? true : false);
+            bool enable;
+
+            VerifyOrExit(aArgsLength > 2, error = OT_ERROR_INVALID_ARGS);
+            SuccessOrExit(error = ParseAsBool(aArgs[2], enable));
+            otChannelManagerSetAutoChannelSelectionEnabled(mInstance, enable);
         }
-        else if (strcmp(argv[1], "delay") == 0)
+        else if (strcmp(aArgs[1], "delay") == 0)
         {
-            VerifyOrExit(argc > 2, error = OT_ERROR_INVALID_ARGS);
-            SuccessOrExit(error = ParseLong(argv[2], value));
-            error = otChannelManagerSetDelay(mInstance, static_cast<uint8_t>(value));
+            uint8_t delay;
+
+            VerifyOrExit(aArgsLength > 2, error = OT_ERROR_INVALID_ARGS);
+            SuccessOrExit(error = ParseAsUint8(aArgs[2], delay));
+            error = otChannelManagerSetDelay(mInstance, delay);
         }
-        else if (strcmp(argv[1], "interval") == 0)
+        else if (strcmp(aArgs[1], "interval") == 0)
         {
-            VerifyOrExit(argc > 2, error = OT_ERROR_INVALID_ARGS);
-            SuccessOrExit(error = ParseLong(argv[2], value));
-            error = otChannelManagerSetAutoChannelSelectionInterval(mInstance, static_cast<uint32_t>(value));
+            uint32_t interval;
+
+            VerifyOrExit(aArgsLength > 2, error = OT_ERROR_INVALID_ARGS);
+            SuccessOrExit(error = ParseAsUint32(aArgs[2], interval));
+            error = otChannelManagerSetAutoChannelSelectionInterval(mInstance, interval);
         }
-        else if (strcmp(argv[1], "supported") == 0)
+        else if (strcmp(aArgs[1], "supported") == 0)
         {
-            VerifyOrExit(argc > 2, error = OT_ERROR_INVALID_ARGS);
-            SuccessOrExit(error = ParseLong(argv[2], value));
-            otChannelManagerSetSupportedChannels(mInstance, static_cast<uint32_t>(value));
+            uint32_t mask;
+
+            VerifyOrExit(aArgsLength > 2, error = OT_ERROR_INVALID_ARGS);
+            SuccessOrExit(error = ParseAsUint32(aArgs[2], mask));
+            otChannelManagerSetSupportedChannels(mInstance, mask);
         }
-        else if (strcmp(argv[1], "favored") == 0)
+        else if (strcmp(aArgs[1], "favored") == 0)
         {
-            VerifyOrExit(argc > 2, error = OT_ERROR_INVALID_ARGS);
-            SuccessOrExit(error = ParseLong(argv[2], value));
-            otChannelManagerSetFavoredChannels(mInstance, static_cast<uint32_t>(value));
+            uint32_t mask;
+
+            VerifyOrExit(aArgsLength > 2, error = OT_ERROR_INVALID_ARGS);
+            SuccessOrExit(error = ParseAsUint32(aArgs[2], mask));
+            otChannelManagerSetFavoredChannels(mInstance, mask);
         }
         else
         {
             ExitNow(error = OT_ERROR_INVALID_ARGS);
         }
     }
-#endif
+#endif // OPENTHREAD_CONFIG_CHANNEL_MANAGER_ENABLE && OPENTHREAD_FTD
     else
     {
-        SuccessOrExit(error = ParseLong(argv[0], value));
-        error = otLinkSetChannel(mInstance, static_cast<uint8_t>(value));
+        SuccessOrExit(error = ParseAsUint8(aArgs[0], channel));
+        error = otLinkSetChannel(mInstance, channel);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
 #if OPENTHREAD_FTD
-void Interpreter::ProcessChild(int argc, char *argv[])
+otError Interpreter::ProcessChild(uint8_t aArgsLength, char *aArgs[])
 {
     otError     error = OT_ERROR_NONE;
     otChildInfo childInfo;
-    long        value;
+    uint16_t    childId;
     bool        isTable;
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
 
-    isTable = (strcmp(argv[0], "table") == 0);
+    isTable = (strcmp(aArgs[0], "table") == 0);
 
-    if (isTable || strcmp(argv[0], "list") == 0)
+    if (isTable || strcmp(aArgs[0], "list") == 0)
     {
-        uint8_t maxChildren;
+        uint16_t maxChildren;
 
         if (isTable)
         {
-            mServer->OutputFormat(
-                "| ID  | RLOC16 | Timeout    | Age        | LQ In | C_VN |R|S|D|N| Extended MAC     |\r\n");
-            mServer->OutputFormat(
-                "+-----+--------+------------+------------+-------+------+-+-+-+-+------------------+\r\n");
+            OutputLine(
+                "| ID  | RLOC16 | Timeout    | Age        | LQ In | C_VN |R|D|N|Ver|CSL|QMsgCnt| Extended MAC     |");
+            OutputLine(
+                "+-----+--------+------------+------------+-------+------+-+-+-+---+---+-------+------------------+");
         }
 
         maxChildren = otThreadGetMaxAllowedChildren(mInstance);
 
-        for (uint8_t i = 0; i < maxChildren; i++)
+        for (uint16_t i = 0; i < maxChildren; i++)
         {
             if ((otThreadGetChildInfoByIndex(mInstance, i, &childInfo) != OT_ERROR_NONE) || childInfo.mIsStateRestoring)
             {
@@ -696,225 +835,395 @@ void Interpreter::ProcessChild(int argc, char *argv[])
 
             if (isTable)
             {
-                mServer->OutputFormat("| %3d ", childInfo.mChildId);
-                mServer->OutputFormat("| 0x%04x ", childInfo.mRloc16);
-                mServer->OutputFormat("| %10d ", childInfo.mTimeout);
-                mServer->OutputFormat("| %10d ", childInfo.mAge);
-                mServer->OutputFormat("| %5d ", childInfo.mLinkQualityIn);
-                mServer->OutputFormat("| %4d ", childInfo.mNetworkDataVersion);
-                mServer->OutputFormat("|%1d", childInfo.mRxOnWhenIdle);
-                mServer->OutputFormat("|%1d", childInfo.mSecureDataRequest);
-                mServer->OutputFormat("|%1d", childInfo.mFullThreadDevice);
-                mServer->OutputFormat("|%1d", childInfo.mFullNetworkData);
-                mServer->OutputFormat("| ");
-
-                for (size_t j = 0; j < sizeof(childInfo.mExtAddress); j++)
-                {
-                    mServer->OutputFormat("%02x", childInfo.mExtAddress.m8[j]);
-                }
-
-                mServer->OutputFormat(" |\r\n");
+                OutputFormat("| %3d ", childInfo.mChildId);
+                OutputFormat("| 0x%04x ", childInfo.mRloc16);
+                OutputFormat("| %10d ", childInfo.mTimeout);
+                OutputFormat("| %10d ", childInfo.mAge);
+                OutputFormat("| %5d ", childInfo.mLinkQualityIn);
+                OutputFormat("| %4d ", childInfo.mNetworkDataVersion);
+                OutputFormat("|%1d", childInfo.mRxOnWhenIdle);
+                OutputFormat("|%1d", childInfo.mFullThreadDevice);
+                OutputFormat("|%1d", childInfo.mFullNetworkData);
+                OutputFormat("|%3d", childInfo.mVersion);
+                OutputFormat("| %1d ", childInfo.mIsCslSynced);
+                OutputFormat("| %5d ", childInfo.mQueuedMessageCnt);
+                OutputFormat("| ");
+                OutputExtAddress(childInfo.mExtAddress);
+                OutputLine(" |");
             }
             else
             {
-                mServer->OutputFormat("%d ", childInfo.mChildId);
+                OutputFormat("%d ", childInfo.mChildId);
             }
         }
 
-        mServer->OutputFormat("\r\n");
+        OutputLine("");
         ExitNow();
     }
 
-    SuccessOrExit(error = ParseLong(argv[0], value));
-    SuccessOrExit(error = otThreadGetChildInfoById(mInstance, static_cast<uint16_t>(value), &childInfo));
+    SuccessOrExit(error = ParseAsUint16(aArgs[0], childId));
+    SuccessOrExit(error = otThreadGetChildInfoById(mInstance, childId, &childInfo));
 
-    mServer->OutputFormat("Child ID: %d\r\n", childInfo.mChildId);
-    mServer->OutputFormat("Rloc: %04x\r\n", childInfo.mRloc16);
-    mServer->OutputFormat("Ext Addr: ");
+    OutputLine("Child ID: %d", childInfo.mChildId);
+    OutputLine("Rloc: %04x", childInfo.mRloc16);
+    OutputFormat("Ext Addr: ");
+    OutputExtAddress(childInfo.mExtAddress);
+    OutputLine("");
+    OutputFormat("Mode: ");
 
-    for (size_t j = 0; j < sizeof(childInfo.mExtAddress); j++)
+    if (!(childInfo.mRxOnWhenIdle || childInfo.mFullThreadDevice || childInfo.mFullNetworkData))
     {
-        mServer->OutputFormat("%02x", childInfo.mExtAddress.m8[j]);
-    }
-
-    mServer->OutputFormat("\r\n");
-    mServer->OutputFormat("Mode: ");
-
-    if (childInfo.mRxOnWhenIdle)
-    {
-        mServer->OutputFormat("r");
-    }
-
-    if (childInfo.mSecureDataRequest)
-    {
-        mServer->OutputFormat("s");
-    }
-
-    if (childInfo.mFullThreadDevice)
-    {
-        mServer->OutputFormat("d");
-    }
-
-    if (childInfo.mFullNetworkData)
-    {
-        mServer->OutputFormat("n");
-    }
-
-    mServer->OutputFormat("\r\n");
-
-    mServer->OutputFormat("Net Data: %d\r\n", childInfo.mNetworkDataVersion);
-    mServer->OutputFormat("Timeout: %d\r\n", childInfo.mTimeout);
-    mServer->OutputFormat("Age: %d\r\n", childInfo.mAge);
-    mServer->OutputFormat("Link Quality In: %d\r\n", childInfo.mLinkQualityIn);
-    mServer->OutputFormat("RSSI: %d\r\n", childInfo.mAverageRssi);
-
-exit:
-    AppendResult(error);
-}
-
-void Interpreter::ProcessChildMax(int argc, char *argv[])
-{
-    otError error = OT_ERROR_NONE;
-    long    value;
-
-    if (argc == 0)
-    {
-        mServer->OutputFormat("%d\r\n", otThreadGetMaxAllowedChildren(mInstance));
+        OutputFormat("-");
     }
     else
     {
-        SuccessOrExit(error = ParseLong(argv[0], value));
-        SuccessOrExit(error = otThreadSetMaxAllowedChildren(mInstance, static_cast<uint8_t>(value)));
+        if (childInfo.mRxOnWhenIdle)
+        {
+            OutputFormat("r");
+        }
+
+        if (childInfo.mFullThreadDevice)
+        {
+            OutputFormat("d");
+        }
+
+        if (childInfo.mFullNetworkData)
+        {
+            OutputFormat("n");
+        }
+    }
+
+    OutputLine("");
+
+    OutputLine("Net Data: %d", childInfo.mNetworkDataVersion);
+    OutputLine("Timeout: %d", childInfo.mTimeout);
+    OutputLine("Age: %d", childInfo.mAge);
+    OutputLine("Link Quality In: %d", childInfo.mLinkQualityIn);
+    OutputLine("RSSI: %d", childInfo.mAverageRssi);
+
+exit:
+    return error;
+}
+
+otError Interpreter::ProcessChildIp(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    if (aArgsLength == 0)
+    {
+        uint16_t maxChildren = otThreadGetMaxAllowedChildren(mInstance);
+
+        for (uint16_t childIndex = 0; childIndex < maxChildren; childIndex++)
+        {
+            otChildIp6AddressIterator iterator = OT_CHILD_IP6_ADDRESS_ITERATOR_INIT;
+            otIp6Address              ip6Address;
+            otChildInfo               childInfo;
+
+            if ((otThreadGetChildInfoByIndex(mInstance, childIndex, &childInfo) != OT_ERROR_NONE) ||
+                childInfo.mIsStateRestoring)
+            {
+                continue;
+            }
+
+            iterator = OT_CHILD_IP6_ADDRESS_ITERATOR_INIT;
+
+            while (otThreadGetChildNextIp6Address(mInstance, childIndex, &iterator, &ip6Address) == OT_ERROR_NONE)
+            {
+                OutputFormat("%04x: ", childInfo.mRloc16);
+                OutputIp6Address(ip6Address);
+                OutputLine("");
+            }
+        }
+    }
+    else if (strcmp(aArgs[0], "max") == 0)
+    {
+        if (aArgsLength == 1)
+        {
+            OutputLine("%d", otThreadGetMaxChildIpAddresses(mInstance));
+        }
+#if OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE
+        else if (aArgsLength == 2)
+        {
+            uint8_t maxIpAddresses;
+            SuccessOrExit(error = ParseAsUint8(aArgs[1], maxIpAddresses));
+            SuccessOrExit(error = otThreadSetMaxChildIpAddresses(mInstance, maxIpAddresses));
+        }
+#endif
+        else
+        {
+            error = OT_ERROR_INVALID_ARGS;
+        }
+    }
+    else
+    {
+        error = OT_ERROR_INVALID_COMMAND;
+    }
+
+#if OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE
+exit:
+#endif
+    return error;
+}
+
+otError Interpreter::ProcessChildMax(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    if (aArgsLength == 0)
+    {
+        OutputLine("%d", otThreadGetMaxAllowedChildren(mInstance));
+    }
+    else
+    {
+        uint16_t maxChildren;
+
+        SuccessOrExit(error = ParseAsUint16(aArgs[0], maxChildren));
+        SuccessOrExit(error = otThreadSetMaxAllowedChildren(mInstance, maxChildren));
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 #endif // OPENTHREAD_FTD
 
-void Interpreter::ProcessChildTimeout(int argc, char *argv[])
+#if OPENTHREAD_CONFIG_CHILD_SUPERVISION_ENABLE
+otError Interpreter::ProcessChildSupervision(uint8_t aArgsLength, char *aArgs[])
 {
-    otError error = OT_ERROR_NONE;
-    long    value;
+    otError  error = OT_ERROR_NONE;
+    uint16_t value;
 
-    if (argc == 0)
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
+
+    if (strcmp(aArgs[0], "checktimeout") == 0)
     {
-        mServer->OutputFormat("%d\r\n", otThreadGetChildTimeout(mInstance));
+        if (aArgsLength == 1)
+        {
+            OutputLine("%u", otChildSupervisionGetCheckTimeout(mInstance));
+        }
+        else if (aArgsLength == 2)
+        {
+            SuccessOrExit(error = ParseAsUint16(aArgs[1], value));
+            otChildSupervisionSetCheckTimeout(mInstance, value);
+        }
+        else
+        {
+            ExitNow(error = OT_ERROR_INVALID_ARGS);
+        }
     }
+#if OPENTHREAD_FTD
+    else if (strcmp(aArgs[0], "interval") == 0)
+    {
+        if (aArgsLength == 1)
+        {
+            OutputLine("%u", otChildSupervisionGetInterval(mInstance));
+        }
+        else if (aArgsLength == 2)
+        {
+            SuccessOrExit(error = ParseAsUint16(aArgs[1], value));
+            otChildSupervisionSetInterval(mInstance, value);
+        }
+        else
+        {
+            ExitNow(error = OT_ERROR_INVALID_ARGS);
+        }
+    }
+#endif
     else
     {
-        SuccessOrExit(error = ParseLong(argv[0], value));
-        otThreadSetChildTimeout(mInstance, static_cast<uint32_t>(value));
+        ExitNow(error = OT_ERROR_INVALID_ARGS);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
+#endif // OPENTHREAD_CONFIG_CHILD_SUPERVISION_ENABLE
 
-#if OPENTHREAD_ENABLE_APPLICATION_COAP
-
-void Interpreter::ProcessCoap(int argc, char *argv[])
+otError Interpreter::ProcessChildTimeout(uint8_t aArgsLength, char *aArgs[])
 {
-    otError error;
-    error = mCoap.Process(argc, argv);
-    AppendResult(error);
+    otError error = OT_ERROR_NONE;
+
+    if (aArgsLength == 0)
+    {
+        OutputLine("%d", otThreadGetChildTimeout(mInstance));
+    }
+    else
+    {
+        uint32_t timeout;
+
+        SuccessOrExit(error = ParseAsUint32(aArgs[0], timeout));
+        otThreadSetChildTimeout(mInstance, timeout);
+    }
+
+exit:
+    return error;
 }
 
-#endif // OPENTHREAD_ENABLE_APPLICATION_COAP
-
-#if OPENTHREAD_ENABLE_APPLICATION_COAP_SECURE
-
-void Interpreter::ProcessCoapSecure(int argc, char *argv[])
+#if OPENTHREAD_CONFIG_COAP_API_ENABLE
+otError Interpreter::ProcessCoap(uint8_t aArgsLength, char *aArgs[])
 {
-    otError error;
-    error = mCoapSecure.Process(argc, argv);
-    AppendResult(error);
+    return mCoap.Process(aArgsLength, aArgs);
 }
+#endif
 
-#endif // OPENTHREAD_ENABLE_APPLICATION_COAP_SECURE
+#if OPENTHREAD_CONFIG_COAP_SECURE_API_ENABLE
+otError Interpreter::ProcessCoapSecure(uint8_t aArgsLength, char *aArgs[])
+{
+    return mCoapSecure.Process(aArgsLength, aArgs);
+}
+#endif
+
+#if OPENTHREAD_CONFIG_PLATFORM_RADIO_COEX_ENABLE
+otError Interpreter::ProcessCoexMetrics(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    if (aArgsLength == 0)
+    {
+        OutputEnabledDisabledStatus(otPlatRadioIsCoexEnabled(mInstance));
+    }
+    else if (strcmp(aArgs[0], "enable") == 0)
+    {
+        error = otPlatRadioSetCoexEnabled(mInstance, true);
+    }
+    else if (strcmp(aArgs[0], "disable") == 0)
+    {
+        error = otPlatRadioSetCoexEnabled(mInstance, false);
+    }
+    else if (strcmp(aArgs[0], "metrics") == 0)
+    {
+        otRadioCoexMetrics metrics;
+
+        SuccessOrExit(error = otPlatRadioGetCoexMetrics(mInstance, &metrics));
+
+        OutputLine("Stopped: %s", metrics.mStopped ? "true" : "false");
+        OutputLine("Grant Glitch: %u", metrics.mNumGrantGlitch);
+        OutputLine("Transmit metrics");
+        OutputLine(kIndentSize, "Request: %u", metrics.mNumTxRequest);
+        OutputLine(kIndentSize, "Grant Immediate: %u", metrics.mNumTxGrantImmediate);
+        OutputLine(kIndentSize, "Grant Wait: %u", metrics.mNumTxGrantWait);
+        OutputLine(kIndentSize, "Grant Wait Activated: %u", metrics.mNumTxGrantWaitActivated);
+        OutputLine(kIndentSize, "Grant Wait Timeout: %u", metrics.mNumTxGrantWaitTimeout);
+        OutputLine(kIndentSize, "Grant Deactivated During Request: %u", metrics.mNumTxGrantDeactivatedDuringRequest);
+        OutputLine(kIndentSize, "Delayed Grant: %u", metrics.mNumTxDelayedGrant);
+        OutputLine(kIndentSize, "Average Request To Grant Time: %u", metrics.mAvgTxRequestToGrantTime);
+        OutputLine("Receive metrics");
+        OutputLine(kIndentSize, "Request: %u", metrics.mNumRxRequest);
+        OutputLine(kIndentSize, "Grant Immediate: %u", metrics.mNumRxGrantImmediate);
+        OutputLine(kIndentSize, "Grant Wait: %u", metrics.mNumRxGrantWait);
+        OutputLine(kIndentSize, "Grant Wait Activated: %u", metrics.mNumRxGrantWaitActivated);
+        OutputLine(kIndentSize, "Grant Wait Timeout: %u", metrics.mNumRxGrantWaitTimeout);
+        OutputLine(kIndentSize, "Grant Deactivated During Request: %u", metrics.mNumRxGrantDeactivatedDuringRequest);
+        OutputLine(kIndentSize, "Delayed Grant: %u", metrics.mNumRxDelayedGrant);
+        OutputLine(kIndentSize, "Average Request To Grant Time: %u", metrics.mAvgRxRequestToGrantTime);
+        OutputLine(kIndentSize, "Grant None: %u", metrics.mNumRxGrantNone);
+    }
+    else
+    {
+        ExitNow(error = OT_ERROR_INVALID_ARGS);
+    }
+
+exit:
+    return error;
+}
+#endif // OPENTHREAD_CONFIG_PLATFORM_RADIO_COEX_ENABLE
 
 #if OPENTHREAD_FTD
-void Interpreter::ProcessContextIdReuseDelay(int argc, char *argv[])
+otError Interpreter::ProcessContextIdReuseDelay(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
-    long    value;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        mServer->OutputFormat("%d\r\n", otThreadGetContextIdReuseDelay(mInstance));
+        OutputLine("%d", otThreadGetContextIdReuseDelay(mInstance));
     }
     else
     {
-        SuccessOrExit(ParseLong(argv[0], value));
-        otThreadSetContextIdReuseDelay(mInstance, static_cast<uint32_t>(value));
+        uint32_t delay;
+
+        SuccessOrExit(error = ParseAsUint32(aArgs[0], delay));
+        otThreadSetContextIdReuseDelay(mInstance, delay);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
-#endif // OPENTHREAD_FTD
+#endif
 
-void Interpreter::ProcessCounters(int argc, char *argv[])
+otError Interpreter::ProcessCounters(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        mServer->OutputFormat("mac\r\n");
-        mServer->OutputFormat("mle\r\n");
+        OutputLine("mac");
+        OutputLine("mle");
     }
-    else if (argc == 1)
+    else if (strcmp(aArgs[0], "mac") == 0)
     {
-        if (strcmp(argv[0], "mac") == 0)
+        if (aArgsLength == 1)
         {
-            otMacCountersPtr macCounters(otLinkGetCounters(mInstance));
+            const otMacCounters *macCounters = otLinkGetCounters(mInstance);
 
-            mServer->OutputFormat("TxTotal: %d\r\n", macCounters->mTxTotal);
-            mServer->OutputFormat("    TxUnicast: %d\r\n", macCounters->mTxUnicast);
-            mServer->OutputFormat("    TxBroadcast: %d\r\n", macCounters->mTxBroadcast);
-            mServer->OutputFormat("    TxAckRequested: %d\r\n", macCounters->mTxAckRequested);
-            mServer->OutputFormat("    TxAcked: %d\r\n", macCounters->mTxAcked);
-            mServer->OutputFormat("    TxNoAckRequested: %d\r\n", macCounters->mTxNoAckRequested);
-            mServer->OutputFormat("    TxData: %d\r\n", macCounters->mTxData);
-            mServer->OutputFormat("    TxDataPoll: %d\r\n", macCounters->mTxDataPoll);
-            mServer->OutputFormat("    TxBeacon: %d\r\n", macCounters->mTxBeacon);
-            mServer->OutputFormat("    TxBeaconRequest: %d\r\n", macCounters->mTxBeaconRequest);
-            mServer->OutputFormat("    TxOther: %d\r\n", macCounters->mTxOther);
-            mServer->OutputFormat("    TxRetry: %d\r\n", macCounters->mTxRetry);
-            mServer->OutputFormat("    TxErrCca: %d\r\n", macCounters->mTxErrCca);
-            mServer->OutputFormat("    TxErrBusyChannel: %d\r\n", macCounters->mTxErrBusyChannel);
-            mServer->OutputFormat("RxTotal: %d\r\n", macCounters->mRxTotal);
-            mServer->OutputFormat("    RxUnicast: %d\r\n", macCounters->mRxUnicast);
-            mServer->OutputFormat("    RxBroadcast: %d\r\n", macCounters->mRxBroadcast);
-            mServer->OutputFormat("    RxData: %d\r\n", macCounters->mRxData);
-            mServer->OutputFormat("    RxDataPoll: %d\r\n", macCounters->mRxDataPoll);
-            mServer->OutputFormat("    RxBeacon: %d\r\n", macCounters->mRxBeacon);
-            mServer->OutputFormat("    RxBeaconRequest: %d\r\n", macCounters->mRxBeaconRequest);
-            mServer->OutputFormat("    RxOther: %d\r\n", macCounters->mRxOther);
-            mServer->OutputFormat("    RxAddressFiltered: %d\r\n", macCounters->mRxAddressFiltered);
-            mServer->OutputFormat("    RxDestAddrFiltered: %d\r\n", macCounters->mRxDestAddrFiltered);
-            mServer->OutputFormat("    RxDuplicated: %d\r\n", macCounters->mRxDuplicated);
-            mServer->OutputFormat("    RxErrNoFrame: %d\r\n", macCounters->mRxErrNoFrame);
-            mServer->OutputFormat("    RxErrNoUnknownNeighbor: %d\r\n", macCounters->mRxErrUnknownNeighbor);
-            mServer->OutputFormat("    RxErrInvalidSrcAddr: %d\r\n", macCounters->mRxErrInvalidSrcAddr);
-            mServer->OutputFormat("    RxErrSec: %d\r\n", macCounters->mRxErrSec);
-            mServer->OutputFormat("    RxErrFcs: %d\r\n", macCounters->mRxErrFcs);
-            mServer->OutputFormat("    RxErrOther: %d\r\n", macCounters->mRxErrOther);
+            OutputLine("TxTotal: %d", macCounters->mTxTotal);
+            OutputLine(kIndentSize, "TxUnicast: %d", macCounters->mTxUnicast);
+            OutputLine(kIndentSize, "TxBroadcast: %d", macCounters->mTxBroadcast);
+            OutputLine(kIndentSize, "TxAckRequested: %d", macCounters->mTxAckRequested);
+            OutputLine(kIndentSize, "TxAcked: %d", macCounters->mTxAcked);
+            OutputLine(kIndentSize, "TxNoAckRequested: %d", macCounters->mTxNoAckRequested);
+            OutputLine(kIndentSize, "TxData: %d", macCounters->mTxData);
+            OutputLine(kIndentSize, "TxDataPoll: %d", macCounters->mTxDataPoll);
+            OutputLine(kIndentSize, "TxBeacon: %d", macCounters->mTxBeacon);
+            OutputLine(kIndentSize, "TxBeaconRequest: %d", macCounters->mTxBeaconRequest);
+            OutputLine(kIndentSize, "TxOther: %d", macCounters->mTxOther);
+            OutputLine(kIndentSize, "TxRetry: %d", macCounters->mTxRetry);
+            OutputLine(kIndentSize, "TxErrCca: %d", macCounters->mTxErrCca);
+            OutputLine(kIndentSize, "TxErrBusyChannel: %d", macCounters->mTxErrBusyChannel);
+            OutputLine("RxTotal: %d", macCounters->mRxTotal);
+            OutputLine(kIndentSize, "RxUnicast: %d", macCounters->mRxUnicast);
+            OutputLine(kIndentSize, "RxBroadcast: %d", macCounters->mRxBroadcast);
+            OutputLine(kIndentSize, "RxData: %d", macCounters->mRxData);
+            OutputLine(kIndentSize, "RxDataPoll: %d", macCounters->mRxDataPoll);
+            OutputLine(kIndentSize, "RxBeacon: %d", macCounters->mRxBeacon);
+            OutputLine(kIndentSize, "RxBeaconRequest: %d", macCounters->mRxBeaconRequest);
+            OutputLine(kIndentSize, "RxOther: %d", macCounters->mRxOther);
+            OutputLine(kIndentSize, "RxAddressFiltered: %d", macCounters->mRxAddressFiltered);
+            OutputLine(kIndentSize, "RxDestAddrFiltered: %d", macCounters->mRxDestAddrFiltered);
+            OutputLine(kIndentSize, "RxDuplicated: %d", macCounters->mRxDuplicated);
+            OutputLine(kIndentSize, "RxErrNoFrame: %d", macCounters->mRxErrNoFrame);
+            OutputLine(kIndentSize, "RxErrNoUnknownNeighbor: %d", macCounters->mRxErrUnknownNeighbor);
+            OutputLine(kIndentSize, "RxErrInvalidSrcAddr: %d", macCounters->mRxErrInvalidSrcAddr);
+            OutputLine(kIndentSize, "RxErrSec: %d", macCounters->mRxErrSec);
+            OutputLine(kIndentSize, "RxErrFcs: %d", macCounters->mRxErrFcs);
+            OutputLine(kIndentSize, "RxErrOther: %d", macCounters->mRxErrOther);
         }
-        else if (strcmp(argv[0], "mle") == 0)
+        else if ((aArgsLength == 2) && (strcmp(aArgs[1], "reset") == 0))
         {
-            otMleCountersPtr mleCounters(otThreadGetMleCounters(mInstance));
+            otLinkResetCounters(mInstance);
+        }
+        else
+        {
+            ExitNow(error = OT_ERROR_INVALID_ARGS);
+        }
+    }
+    else if (strcmp(aArgs[0], "mle") == 0)
+    {
+        if (aArgsLength == 1)
+        {
+            const otMleCounters *mleCounters = otThreadGetMleCounters(mInstance);
 
-            mServer->OutputFormat("Role Disabled: %d\r\n", mleCounters->mDisabledRole);
-            mServer->OutputFormat("Role Detached: %d\r\n", mleCounters->mDetachedRole);
-            mServer->OutputFormat("Role Child: %d\r\n", mleCounters->mChildRole);
-            mServer->OutputFormat("Role Router: %d\r\n", mleCounters->mRouterRole);
-            mServer->OutputFormat("Role Leader: %d\r\n", mleCounters->mLeaderRole);
-            mServer->OutputFormat("Attach Attempts: %d\r\n", mleCounters->mAttachAttempts);
-            mServer->OutputFormat("Partition Id Changes: %d\r\n", mleCounters->mPartitionIdChanges);
-            mServer->OutputFormat("Better Partition Attach Attempts: %d\r\n",
-                                  mleCounters->mBetterPartitionAttachAttempts);
-            mServer->OutputFormat("Parent Changes: %d\r\n", mleCounters->mParentChanges);
+            OutputLine("Role Disabled: %d", mleCounters->mDisabledRole);
+            OutputLine("Role Detached: %d", mleCounters->mDetachedRole);
+            OutputLine("Role Child: %d", mleCounters->mChildRole);
+            OutputLine("Role Router: %d", mleCounters->mRouterRole);
+            OutputLine("Role Leader: %d", mleCounters->mLeaderRole);
+            OutputLine("Attach Attempts: %d", mleCounters->mAttachAttempts);
+            OutputLine("Partition Id Changes: %d", mleCounters->mPartitionIdChanges);
+            OutputLine("Better Partition Attach Attempts: %d", mleCounters->mBetterPartitionAttachAttempts);
+            OutputLine("Parent Changes: %d", mleCounters->mParentChanges);
+        }
+        else if ((aArgsLength == 2) && (strcmp(aArgs[1], "reset") == 0))
+        {
+            otThreadResetMleCounters(mInstance);
         }
         else
         {
@@ -927,103 +1236,66 @@ void Interpreter::ProcessCounters(int argc, char *argv[])
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
+#if OPENTHREAD_CONFIG_MAC_CSL_RECEIVER_ENABLE
+otError Interpreter::ProcessCsl(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_INVALID_ARGS;
+
+    if (aArgsLength == 0)
+    {
+        OutputLine("Channel: %u", otLinkCslGetChannel(mInstance));
+        OutputLine("Period: %u(in units of 10 symbols), %ums", otLinkCslGetPeriod(mInstance),
+                   otLinkCslGetPeriod(mInstance) * kUsPerTenSymbols / 1000);
+        OutputLine("Timeout: %us", otLinkCslGetTimeout(mInstance));
+        error = OT_ERROR_NONE;
+    }
+    else if (aArgsLength == 2)
+    {
+        if (strcmp(aArgs[0], "channel") == 0)
+        {
+            uint8_t channel;
+
+            SuccessOrExit(error = ParseAsUint8(aArgs[1], channel));
+            SuccessOrExit(error = otLinkCslSetChannel(mInstance, channel));
+        }
+        else if (strcmp(aArgs[0], "period") == 0)
+        {
+            uint16_t period;
+
+            SuccessOrExit(error = ParseAsUint16(aArgs[1], period));
+            SuccessOrExit(error = otLinkCslSetPeriod(mInstance, period));
+        }
+        else if (strcmp(aArgs[0], "timeout") == 0)
+        {
+            uint32_t timeout;
+
+            SuccessOrExit(error = ParseAsUint32(aArgs[1], timeout));
+            SuccessOrExit(error = otLinkCslSetTimeout(mInstance, timeout));
+        }
+    }
+
+exit:
+    return error;
+}
+#endif // OPENTHREAD_CONFIG_MAC_CSL_RECEIVER_ENABLE
+
 #if OPENTHREAD_FTD
-void Interpreter::ProcessDelayTimerMin(int argc, char *argv[])
+otError Interpreter::ProcessDelayTimerMin(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        mServer->OutputFormat("%d\r\n", (otDatasetGetDelayTimerMinimal(mInstance) / 1000));
+        OutputLine("%d", (otDatasetGetDelayTimerMinimal(mInstance) / 1000));
     }
-    else if (argc == 1)
+    else if (aArgsLength == 1)
     {
-        unsigned long value;
-        SuccessOrExit(error = ParseUnsignedLong(argv[0], value));
-        SuccessOrExit(error = otDatasetSetDelayTimerMinimal(mInstance, static_cast<uint32_t>(value * 1000)));
-    }
-    else
-    {
-        error = OT_ERROR_INVALID_ARGS;
-    }
-
-exit:
-    AppendResult(error);
-}
-#endif
-
-void Interpreter::ProcessDiscover(int argc, char *argv[])
-{
-    otError  error        = OT_ERROR_NONE;
-    uint32_t scanChannels = 0;
-    long     value;
-
-    if (argc > 0)
-    {
-        SuccessOrExit(error = ParseLong(argv[0], value));
-        VerifyOrExit((0 <= value) && (value < static_cast<long>(sizeof(scanChannels) * CHAR_BIT)),
-                     error = OT_ERROR_INVALID_ARGS);
-        scanChannels = 1 << value;
-    }
-
-    SuccessOrExit(error = otThreadDiscover(mInstance, scanChannels, OT_PANID_BROADCAST, false, false,
-                                           &Interpreter::s_HandleActiveScanResult, this));
-    mServer->OutputFormat("| J | Network Name     | Extended PAN     | PAN  | MAC Address      | Ch | dBm | LQI |\r\n");
-    mServer->OutputFormat("+---+------------------+------------------+------+------------------+----+-----+-----+\r\n");
-
-    return;
-
-exit:
-    AppendResult(error);
-}
-
-#if OPENTHREAD_ENABLE_DNS_CLIENT
-void Interpreter::ProcessDns(int argc, char *argv[])
-{
-    otError          error = OT_ERROR_NONE;
-    long             port  = OT_DNS_DEFAULT_SERVER_PORT;
-    Ip6::MessageInfo messageInfo;
-    otDnsQuery       query;
-
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
-
-    if (strcmp(argv[0], "resolve") == 0)
-    {
-        VerifyOrExit(!mResolvingInProgress, error = OT_ERROR_BUSY);
-        VerifyOrExit(argc > 1, error = OT_ERROR_INVALID_ARGS);
-        VerifyOrExit(strlen(argv[1]) < OT_DNS_MAX_HOSTNAME_LENGTH, error = OT_ERROR_INVALID_ARGS);
-
-        strcpy(mResolvingHostname, argv[1]);
-
-        messageInfo.mInterfaceId = OT_NETIF_INTERFACE_ID_THREAD;
-
-        if (argc > 2)
-        {
-            SuccessOrExit(error = messageInfo.GetPeerAddr().FromString(argv[2]));
-        }
-        else
-        {
-            // Use IPv6 address of default DNS server.
-            SuccessOrExit(error = messageInfo.GetPeerAddr().FromString(OT_DNS_DEFAULT_SERVER_IP));
-        }
-
-        if (argc > 3)
-        {
-            SuccessOrExit(error = ParseLong(argv[3], port));
-        }
-
-        messageInfo.SetPeerPort(static_cast<uint16_t>(port));
-
-        query.mHostname    = mResolvingHostname;
-        query.mMessageInfo = static_cast<const otMessageInfo *>(&messageInfo);
-        query.mNoRecursion = false;
-
-        SuccessOrExit(error = otDnsClientQuery(mInstance, &query, &Interpreter::s_HandleDnsResponse, this));
-
-        mResolvingInProgress = true;
+        uint32_t delay;
+        SuccessOrExit(error = ParseAsUint32(aArgs[0], delay));
+        SuccessOrExit(error = otDatasetSetDelayTimerMinimal(mInstance, static_cast<uint32_t>(delay * 1000)));
     }
     else
     {
@@ -1031,188 +1303,548 @@ void Interpreter::ProcessDns(int argc, char *argv[])
     }
 
 exit:
-    if (error != OT_ERROR_NONE)
-    {
-        AppendResult(error);
-    }
-}
-
-void Interpreter::s_HandleDnsResponse(void *        aContext,
-                                      const char *  aHostname,
-                                      otIp6Address *aAddress,
-                                      uint32_t      aTtl,
-                                      otError       aResult)
-{
-    static_cast<Interpreter *>(aContext)->HandleDnsResponse(aHostname, *static_cast<Ip6::Address *>(aAddress), aTtl,
-                                                            aResult);
-}
-
-void Interpreter::HandleDnsResponse(const char *aHostname, Ip6::Address &aAddress, uint32_t aTtl, otError aResult)
-{
-    mServer->OutputFormat("DNS response for %s - ", aHostname);
-
-    if (aResult == OT_ERROR_NONE)
-    {
-        mServer->OutputFormat("[%x:%x:%x:%x:%x:%x:%x:%x] TTL: %d\r\n", HostSwap16(aAddress.mFields.m16[0]),
-                              HostSwap16(aAddress.mFields.m16[1]), HostSwap16(aAddress.mFields.m16[2]),
-                              HostSwap16(aAddress.mFields.m16[3]), HostSwap16(aAddress.mFields.m16[4]),
-                              HostSwap16(aAddress.mFields.m16[5]), HostSwap16(aAddress.mFields.m16[6]),
-                              HostSwap16(aAddress.mFields.m16[7]), aTtl);
-    }
-    else
-    {
-        AppendResult(aResult);
-    }
-
-    mResolvingInProgress = false;
+    return error;
 }
 #endif
 
-#if OPENTHREAD_FTD
-void Interpreter::ProcessEidCache(int argc, char *argv[])
+otError Interpreter::ProcessDiscover(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
+    otError  error        = OT_ERROR_NONE;
+    uint32_t scanChannels = 0;
 
-    otEidCacheEntry entry;
-
-    for (uint8_t i = 0;; i++)
+    if (aArgsLength > 0)
     {
-        SuccessOrExit(otThreadGetEidCacheEntry(mInstance, i, &entry));
+        uint8_t channel;
 
-        if (entry.mValid == false)
+        SuccessOrExit(error = ParseAsUint8(aArgs[0], channel));
+        VerifyOrExit(channel < sizeof(scanChannels) * CHAR_BIT, error = OT_ERROR_INVALID_ARGS);
+        scanChannels = 1 << channel;
+    }
+
+    SuccessOrExit(error = otThreadDiscover(mInstance, scanChannels, OT_PANID_BROADCAST, false, false,
+                                           &Interpreter::HandleActiveScanResult, this));
+    OutputLine("| J | Network Name     | Extended PAN     | PAN  | MAC Address      | Ch | dBm | LQI |");
+    OutputLine("+---+------------------+------------------+------+------------------+----+-----+-----+");
+
+    error = OT_ERROR_PENDING;
+
+exit:
+    return error;
+}
+
+void Interpreter::OutputDnsTxtData(const uint8_t *aTxtData, uint16_t aTxtDataLength)
+{
+    otDnsTxtEntry         entry;
+    otDnsTxtEntryIterator iterator;
+    bool                  isFirst = true;
+
+    otDnsInitTxtEntryIterator(&iterator, aTxtData, aTxtDataLength);
+
+    OutputFormat("[");
+
+    while (otDnsGetNextTxtEntry(&iterator, &entry) == OT_ERROR_NONE)
+    {
+        if (!isFirst)
         {
-            continue;
+            OutputFormat(", ");
         }
 
-        mServer->OutputFormat("%x:%x:%x:%x:%x:%x:%x:%x %04x\r\n", HostSwap16(entry.mTarget.mFields.m16[0]),
-                              HostSwap16(entry.mTarget.mFields.m16[1]), HostSwap16(entry.mTarget.mFields.m16[2]),
-                              HostSwap16(entry.mTarget.mFields.m16[3]), HostSwap16(entry.mTarget.mFields.m16[4]),
-                              HostSwap16(entry.mTarget.mFields.m16[5]), HostSwap16(entry.mTarget.mFields.m16[6]),
-                              HostSwap16(entry.mTarget.mFields.m16[7]), entry.mRloc16);
+        if (entry.mKey == nullptr)
+        {
+            // A null `mKey` indicates that the key in the entry is
+            // longer than the recommended max key length, so the entry
+            // could not be parsed. In this case, the whole entry is
+            // returned encoded in `mValue`.
+
+            OutputFormat("[");
+            OutputBytes(entry.mValue, entry.mValueLength);
+            OutputFormat("]");
+        }
+        else
+        {
+            OutputFormat("%s", entry.mKey);
+
+            if (entry.mValue != nullptr)
+            {
+                OutputFormat("=");
+                OutputBytes(entry.mValue, entry.mValueLength);
+            }
+        }
+
+        isFirst = false;
+    }
+
+    OutputFormat("]");
+}
+
+#if OPENTHREAD_CONFIG_DNS_CLIENT_ENABLE
+
+otError Interpreter::GetDnsConfig(uint8_t            aArgsLength,
+                                  char *             aArgs[],
+                                  otDnsQueryConfig *&aConfig,
+                                  uint8_t            aStartArgsIndex)
+{
+    // This method gets the optional config from given `aArgs` after the
+    // `aStartArgsIndex`. The format: `[server IPv6 address] [server
+    // port] [timeout] [max tx attempt] [recursion desired]`.
+
+    otError error = OT_ERROR_NONE;
+    bool    recursionDesired;
+
+    memset(aConfig, 0, sizeof(otDnsQueryConfig));
+
+    VerifyOrExit(aArgsLength > aStartArgsIndex, aConfig = nullptr);
+
+    SuccessOrExit(error = ParseAsIp6Address(aArgs[aStartArgsIndex], aConfig->mServerSockAddr.mAddress));
+
+    VerifyOrExit(aArgsLength > aStartArgsIndex + 1);
+    SuccessOrExit(error = ParseAsUint16(aArgs[aStartArgsIndex + 1], aConfig->mServerSockAddr.mPort));
+
+    VerifyOrExit(aArgsLength > aStartArgsIndex + 2);
+    SuccessOrExit(error = ParseAsUint32(aArgs[aStartArgsIndex + 2], aConfig->mResponseTimeout));
+
+    VerifyOrExit(aArgsLength > aStartArgsIndex + 3);
+    SuccessOrExit(error = ParseAsUint8(aArgs[aStartArgsIndex + 3], aConfig->mMaxTxAttempts));
+
+    VerifyOrExit(aArgsLength > aStartArgsIndex + 4);
+    SuccessOrExit(error = ParseAsBool(aArgs[aStartArgsIndex + 4], recursionDesired));
+    aConfig->mRecursionFlag = recursionDesired ? OT_DNS_FLAG_RECURSION_DESIRED : OT_DNS_FLAG_NO_RECURSION;
+
+exit:
+    return error;
+}
+
+otError Interpreter::ProcessDns(uint8_t aArgsLength, char *aArgs[])
+{
+    otError           error = OT_ERROR_NONE;
+    otDnsQueryConfig  queryConfig;
+    otDnsQueryConfig *config = &queryConfig;
+
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
+
+    if (strcmp(aArgs[0], "config") == 0)
+    {
+        if (aArgsLength == 1)
+        {
+            const otDnsQueryConfig *defaultConfig = otDnsClientGetDefaultConfig(mInstance);
+
+            OutputFormat("Server: [");
+            OutputIp6Address(defaultConfig->mServerSockAddr.mAddress);
+            OutputLine("]:%d", defaultConfig->mServerSockAddr.mPort);
+            OutputLine("ResponseTimeout: %u ms", defaultConfig->mResponseTimeout);
+            OutputLine("MaxTxAttempts: %u", defaultConfig->mMaxTxAttempts);
+            OutputLine("RecursionDesired: %s",
+                       (defaultConfig->mRecursionFlag == OT_DNS_FLAG_RECURSION_DESIRED) ? "yes" : "no");
+        }
+        else
+        {
+            SuccessOrExit(error = GetDnsConfig(aArgsLength, aArgs, config, 1));
+            otDnsClientSetDefaultConfig(mInstance, config);
+        }
+    }
+    else if (strcmp(aArgs[0], "resolve") == 0)
+    {
+        SuccessOrExit(error = GetDnsConfig(aArgsLength, aArgs, config, 2));
+        SuccessOrExit(error = otDnsClientResolveAddress(mInstance, aArgs[1], &Interpreter::HandleDnsAddressResponse,
+                                                        this, config));
+        error = OT_ERROR_PENDING;
+    }
+#if OPENTHREAD_CONFIG_DNS_CLIENT_SERVICE_DISCOVERY_ENABLE
+    else if (strcmp(aArgs[0], "browse") == 0)
+    {
+        SuccessOrExit(error = GetDnsConfig(aArgsLength, aArgs, config, 2));
+        SuccessOrExit(error =
+                          otDnsClientBrowse(mInstance, aArgs[1], &Interpreter::HandleDnsBrowseResponse, this, config));
+        error = OT_ERROR_PENDING;
+    }
+    else if (strcmp(aArgs[0], "service") == 0)
+    {
+        SuccessOrExit(error = GetDnsConfig(aArgsLength, aArgs, config, 3));
+        SuccessOrExit(error = otDnsClientResolveService(mInstance, aArgs[1], aArgs[2],
+                                                        &Interpreter::HandleDnsServiceResponse, this, config));
+        error = OT_ERROR_PENDING;
+    }
+#endif // OPENTHREAD_CONFIG_DNS_CLIENT_SERVICE_DISCOVERY_ENABLE
+    else
+    {
+        ExitNow(error = OT_ERROR_INVALID_COMMAND);
     }
 
 exit:
-    AppendResult(OT_ERROR_NONE);
+    return error;
 }
-#endif // OPENTHREAD_FTD
 
-void Interpreter::ProcessEui64(int argc, char *argv[])
+void Interpreter::HandleDnsAddressResponse(otError aError, const otDnsAddressResponse *aResponse, void *aContext)
 {
-    OT_UNUSED_VARIABLE(argv);
+    static_cast<Interpreter *>(aContext)->HandleDnsAddressResponse(aError, aResponse);
+}
+
+void Interpreter::HandleDnsAddressResponse(otError aError, const otDnsAddressResponse *aResponse)
+{
+    char         hostName[OT_DNS_MAX_NAME_SIZE];
+    otIp6Address address;
+    uint32_t     ttl;
+
+    IgnoreError(otDnsAddressResponseGetHostName(aResponse, hostName, sizeof(hostName)));
+
+    OutputFormat("DNS response for %s - ", hostName);
+
+    if (aError == OT_ERROR_NONE)
+    {
+        uint16_t index = 0;
+
+        while (otDnsAddressResponseGetAddress(aResponse, index, &address, &ttl) == OT_ERROR_NONE)
+        {
+            OutputIp6Address(address);
+            OutputFormat(" TTL:%u ", ttl);
+            index++;
+        }
+
+        OutputLine("");
+    }
+
+    OutputResult(aError);
+}
+
+#if OPENTHREAD_CONFIG_DNS_CLIENT_SERVICE_DISCOVERY_ENABLE
+
+void Interpreter::OutputDnsServiceInfo(uint8_t aIndentSize, const otDnsServiceInfo &aServiceInfo)
+{
+    OutputLine(aIndentSize, "Port:%d, Priority:%d, Weight:%d, TTL:%u", aServiceInfo.mPort, aServiceInfo.mPriority,
+               aServiceInfo.mWeight, aServiceInfo.mTtl);
+    OutputLine(aIndentSize, "Host:%s", aServiceInfo.mHostNameBuffer);
+    OutputFormat(aIndentSize, "HostAddress:");
+    OutputIp6Address(aServiceInfo.mHostAddress);
+    OutputLine(" TTL:%u", aServiceInfo.mHostAddressTtl);
+    OutputFormat(aIndentSize, "TXT:");
+    OutputDnsTxtData(aServiceInfo.mTxtData, aServiceInfo.mTxtDataSize);
+    OutputLine(" TTL:%u", aServiceInfo.mTxtDataTtl);
+}
+
+void Interpreter::HandleDnsBrowseResponse(otError aError, const otDnsBrowseResponse *aResponse, void *aContext)
+{
+    static_cast<Interpreter *>(aContext)->HandleDnsBrowseResponse(aError, aResponse);
+}
+
+void Interpreter::HandleDnsBrowseResponse(otError aError, const otDnsBrowseResponse *aResponse)
+{
+    char             name[OT_DNS_MAX_NAME_SIZE];
+    char             label[OT_DNS_MAX_LABEL_SIZE];
+    uint8_t          txtBuffer[255];
+    otDnsServiceInfo serviceInfo;
+
+    IgnoreError(otDnsBrowseResponseGetServiceName(aResponse, name, sizeof(name)));
+
+    OutputLine("DNS browse response for %s", name);
+
+    if (aError == OT_ERROR_NONE)
+    {
+        uint16_t index = 0;
+
+        while (otDnsBrowseResponseGetServiceInstance(aResponse, index, label, sizeof(label)) == OT_ERROR_NONE)
+        {
+            OutputLine("%s", label);
+            index++;
+
+            serviceInfo.mHostNameBuffer     = name;
+            serviceInfo.mHostNameBufferSize = sizeof(name);
+            serviceInfo.mTxtData            = txtBuffer;
+            serviceInfo.mTxtDataSize        = sizeof(txtBuffer);
+
+            if (otDnsBrowseResponseGetServiceInfo(aResponse, label, &serviceInfo) == OT_ERROR_NONE)
+            {
+                OutputDnsServiceInfo(kIndentSize, serviceInfo);
+            }
+
+            OutputLine("");
+        }
+    }
+
+    OutputResult(aError);
+}
+
+void Interpreter::HandleDnsServiceResponse(otError aError, const otDnsServiceResponse *aResponse, void *aContext)
+{
+    static_cast<Interpreter *>(aContext)->HandleDnsServiceResponse(aError, aResponse);
+}
+
+void Interpreter::HandleDnsServiceResponse(otError aError, const otDnsServiceResponse *aResponse)
+{
+    char             name[OT_DNS_MAX_NAME_SIZE];
+    char             label[OT_DNS_MAX_LABEL_SIZE];
+    uint8_t          txtBuffer[255];
+    otDnsServiceInfo serviceInfo;
+
+    IgnoreError(otDnsServiceResponseGetServiceName(aResponse, label, sizeof(label), name, sizeof(name)));
+
+    OutputLine("DNS service resolution response for %s for service %s", label, name);
+
+    if (aError == OT_ERROR_NONE)
+    {
+        serviceInfo.mHostNameBuffer     = name;
+        serviceInfo.mHostNameBufferSize = sizeof(name);
+        serviceInfo.mTxtData            = txtBuffer;
+        serviceInfo.mTxtDataSize        = sizeof(txtBuffer);
+
+        if (otDnsServiceResponseGetServiceInfo(aResponse, &serviceInfo) == OT_ERROR_NONE)
+        {
+            OutputDnsServiceInfo(/* aIndetSize */ 0, serviceInfo);
+            OutputLine("");
+        }
+    }
+
+    OutputResult(aError);
+}
+
+#endif // OPENTHREAD_CONFIG_DNS_CLIENT_SERVICE_DISCOVERY_ENABLE
+#endif // OPENTHREAD_CONFIG_DNS_CLIENT_ENABLE
+
+#if OPENTHREAD_FTD
+otError Interpreter::ProcessEidCache(uint8_t aArgsLength, char *aArgs[])
+{
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
+
+    otCacheEntryIterator iterator;
+    otCacheEntryInfo     entry;
+
+    memset(&iterator, 0, sizeof(iterator));
+
+    for (uint8_t i = 0;; i++)
+    {
+        SuccessOrExit(otThreadGetNextCacheEntry(mInstance, &entry, &iterator));
+
+        OutputIp6Address(entry.mTarget);
+        OutputLine(" %04x", entry.mRloc16);
+    }
+
+exit:
+    return OT_ERROR_NONE;
+}
+#endif
+
+otError Interpreter::ProcessEui64(uint8_t aArgsLength, char *aArgs[])
+{
+    OT_UNUSED_VARIABLE(aArgs);
 
     otError      error = OT_ERROR_NONE;
     otExtAddress extAddress;
 
-    VerifyOrExit(argc == 0, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength == 0, error = OT_ERROR_INVALID_ARGS);
 
     otLinkGetFactoryAssignedIeeeEui64(mInstance, &extAddress);
     OutputBytes(extAddress.m8, OT_EXT_ADDRESS_SIZE);
-    mServer->OutputFormat("\r\n");
+    OutputLine("");
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void Interpreter::ProcessExtAddress(int argc, char *argv[])
+otError Interpreter::ProcessExtAddress(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        otBufferPtr extAddress(reinterpret_cast<const uint8_t *>(otLinkGetExtendedAddress(mInstance)));
+        const uint8_t *extAddress = reinterpret_cast<const uint8_t *>(otLinkGetExtendedAddress(mInstance));
         OutputBytes(extAddress, OT_EXT_ADDRESS_SIZE);
-        mServer->OutputFormat("\r\n");
+        OutputLine("");
     }
     else
     {
         otExtAddress extAddress;
 
-        VerifyOrExit(Hex2Bin(argv[0], extAddress.m8, sizeof(otExtAddress)) >= 0, error = OT_ERROR_PARSE);
-
+        SuccessOrExit(error = ParseAsHexString(aArgs[0], extAddress.m8));
         error = otLinkSetExtendedAddress(mInstance, &extAddress);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
 #if OPENTHREAD_POSIX
-void Interpreter::ProcessExit(int argc, char *argv[])
+otError Interpreter::ProcessExit(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
     exit(EXIT_SUCCESS);
+
+    return OT_ERROR_NONE;
 }
 #endif
 
-#if (OPENTHREAD_CONFIG_LOG_OUTPUT == OPENTHREAD_CONFIG_LOG_OUTPUT_DEBUG_UART) && OPENTHREAD_POSIX
-
-void Interpreter::ProcessLogFilename(int argc, char *argv[])
+otError Interpreter::ProcessLog(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    VerifyOrExit(argc == 1, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength >= 1, error = OT_ERROR_INVALID_ARGS);
 
-    SuccessOrExit(error = otPlatDebugUart_logfile(argv[0]));
+    if (!strcmp(aArgs[0], "level"))
+    {
+        if (aArgsLength == 1)
+        {
+            OutputLine("%d", otLoggingGetLevel());
+        }
+#if OPENTHREAD_CONFIG_LOG_LEVEL_DYNAMIC_ENABLE
+        else if (aArgsLength == 2)
+        {
+            uint8_t level;
+
+            SuccessOrExit(error = ParseAsUint8(aArgs[1], level));
+            SuccessOrExit(error = otLoggingSetLevel(static_cast<otLogLevel>(level)));
+        }
+#endif
+        else
+        {
+            ExitNow(error = OT_ERROR_INVALID_ARGS);
+        }
+    }
+#if (OPENTHREAD_CONFIG_LOG_OUTPUT == OPENTHREAD_CONFIG_LOG_OUTPUT_DEBUG_UART) && OPENTHREAD_POSIX
+    else if (!strcmp(aArgs[0], "filename"))
+    {
+        VerifyOrExit(aArgsLength == 1, error = OT_ERROR_INVALID_ARGS);
+        SuccessOrExit(error = otPlatDebugUart_logfile(aArgs[1]));
+    }
+#endif
+    else
+    {
+        ExitNow(error = OT_ERROR_INVALID_ARGS);
+    }
 
 exit:
-    AppendResult(error);
+    return error;
 }
-#endif
 
-void Interpreter::ProcessExtPanId(int argc, char *argv[])
+otError Interpreter::ProcessExtPanId(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        otBufferPtr extPanId(reinterpret_cast<const uint8_t *>(otThreadGetExtendedPanId(mInstance)));
+        const uint8_t *extPanId = reinterpret_cast<const uint8_t *>(otThreadGetExtendedPanId(mInstance));
         OutputBytes(extPanId, OT_EXT_PAN_ID_SIZE);
-        mServer->OutputFormat("\r\n");
+        OutputLine("");
     }
     else
     {
         otExtendedPanId extPanId;
 
-        VerifyOrExit(Hex2Bin(argv[0], extPanId.m8, sizeof(extPanId)) >= 0, error = OT_ERROR_PARSE);
-
+        SuccessOrExit(error = ParseAsHexString(aArgs[0], extPanId.m8));
         error = otThreadSetExtendedPanId(mInstance, &extPanId);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void Interpreter::ProcessFactoryReset(int argc, char *argv[])
+otError Interpreter::ProcessFactoryReset(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
     otInstanceFactoryReset(mInstance);
+
+    return OT_ERROR_NONE;
 }
 
-void Interpreter::ProcessIfconfig(int argc, char *argv[])
+#if OPENTHREAD_FTD && OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE
+otError Interpreter::ProcessFake(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_INVALID_COMMAND;
+
+    VerifyOrExit(aArgsLength >= 1);
+
+    if (strcmp(aArgs[0], "/a/an") == 0)
+    {
+        otIp6Address             destination, target;
+        otIp6InterfaceIdentifier mlIid;
+
+        VerifyOrExit(aArgsLength == 4, error = OT_ERROR_INVALID_ARGS);
+
+        SuccessOrExit(error = ParseAsIp6Address(aArgs[1], destination));
+        SuccessOrExit(error = ParseAsIp6Address(aArgs[2], target));
+        SuccessOrExit(error = ParseAsHexString(aArgs[3], mlIid.mFields.m8));
+        otThreadSendAddressNotification(mInstance, &destination, &target, &mlIid);
+    }
+#if OPENTHREAD_CONFIG_BACKBONE_ROUTER_DUA_NDPROXYING_ENABLE
+    else if (strcmp(aArgs[0], "/b/ba") == 0)
+    {
+        otIp6Address             target;
+        otIp6InterfaceIdentifier mlIid;
+        uint32_t                 timeSinceLastTransaction;
+
+        VerifyOrExit(aArgsLength == 4, error = OT_ERROR_INVALID_ARGS);
+
+        SuccessOrExit(error = ParseAsIp6Address(aArgs[1], target));
+        SuccessOrExit(error = ParseAsHexString(aArgs[2], mlIid.mFields.m8));
+        SuccessOrExit(error = ParseAsUint32(aArgs[3], timeSinceLastTransaction));
+
+        error = otThreadSendProactiveBackboneNotification(mInstance, &target, &mlIid, timeSinceLastTransaction);
+    }
+#endif
+exit:
+    return error;
+}
+#endif
+
+otError Interpreter::ProcessFem(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        if (otIp6IsEnabled(mInstance))
+        int8_t lnaGain;
+
+        SuccessOrExit(error = otPlatRadioGetFemLnaGain(mInstance, &lnaGain));
+        OutputLine("LNA gain %d dBm", lnaGain);
+    }
+    else if (strcmp(aArgs[0], "lnagain") == 0)
+    {
+        if (aArgsLength == 1)
         {
-            mServer->OutputFormat("up\r\n");
+            int8_t lnaGain;
+
+            SuccessOrExit(error = otPlatRadioGetFemLnaGain(mInstance, &lnaGain));
+            OutputLine("%d", lnaGain);
         }
         else
         {
-            mServer->OutputFormat("down\r\n");
+            int8_t lnaGain;
+
+            SuccessOrExit(error = ParseAsInt8(aArgs[1], lnaGain));
+            SuccessOrExit(error = otPlatRadioSetFemLnaGain(mInstance, lnaGain));
         }
     }
-    else if (strcmp(argv[0], "up") == 0)
+    else
+    {
+        error = OT_ERROR_INVALID_ARGS;
+    }
+
+exit:
+    return error;
+}
+
+otError Interpreter::ProcessIfconfig(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    if (aArgsLength == 0)
+    {
+        if (otIp6IsEnabled(mInstance))
+        {
+            OutputLine("up");
+        }
+        else
+        {
+            OutputLine("down");
+        }
+    }
+    else if (strcmp(aArgs[0], "up") == 0)
     {
         SuccessOrExit(error = otIp6SetEnabled(mInstance, true));
     }
-    else if (strcmp(argv[0], "down") == 0)
+    else if (strcmp(aArgs[0], "down") == 0)
     {
         SuccessOrExit(error = otIp6SetEnabled(mInstance, false));
     }
@@ -1222,128 +1854,133 @@ void Interpreter::ProcessIfconfig(int argc, char *argv[])
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-otError Interpreter::ProcessIpAddrAdd(int argc, char *argv[])
+otError Interpreter::ProcessIpAddrAdd(uint8_t aArgsLength, char *aArgs[])
 {
     otError        error;
     otNetifAddress aAddress;
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
 
-    SuccessOrExit(error = otIp6AddressFromString(argv[0], &aAddress.mAddress));
-    aAddress.mPrefixLength = 64;
-    aAddress.mPreferred    = true;
-    aAddress.mValid        = true;
-    error                  = otIp6AddUnicastAddress(mInstance, &aAddress);
+    SuccessOrExit(error = ParseAsIp6Address(aArgs[0], aAddress.mAddress));
+    aAddress.mPrefixLength  = 64;
+    aAddress.mPreferred     = true;
+    aAddress.mValid         = true;
+    aAddress.mAddressOrigin = OT_ADDRESS_ORIGIN_MANUAL;
+    error                   = otIp6AddUnicastAddress(mInstance, &aAddress);
 
 exit:
     return error;
 }
 
-otError Interpreter::ProcessIpAddrDel(int argc, char *argv[])
+otError Interpreter::ProcessIpAddrDel(uint8_t aArgsLength, char *aArgs[])
 {
-    otError             error;
-    struct otIp6Address address;
+    otError      error;
+    otIp6Address address;
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
 
-    SuccessOrExit(error = otIp6AddressFromString(argv[0], &address));
+    SuccessOrExit(error = ParseAsIp6Address(aArgs[0], address));
     error = otIp6RemoveUnicastAddress(mInstance, &address);
 
 exit:
     return error;
 }
 
-void Interpreter::ProcessIpAddr(int argc, char *argv[])
+otError Interpreter::ProcessIpAddr(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        otNetifAddressPtr unicastAddrs(otIp6GetUnicastAddresses(mInstance));
+        const otNetifAddress *unicastAddrs = otIp6GetUnicastAddresses(mInstance);
 
         for (const otNetifAddress *addr = unicastAddrs; addr; addr = addr->mNext)
         {
-            mServer->OutputFormat("%x:%x:%x:%x:%x:%x:%x:%x\r\n", HostSwap16(addr->mAddress.mFields.m16[0]),
-                                  HostSwap16(addr->mAddress.mFields.m16[1]), HostSwap16(addr->mAddress.mFields.m16[2]),
-                                  HostSwap16(addr->mAddress.mFields.m16[3]), HostSwap16(addr->mAddress.mFields.m16[4]),
-                                  HostSwap16(addr->mAddress.mFields.m16[5]), HostSwap16(addr->mAddress.mFields.m16[6]),
-                                  HostSwap16(addr->mAddress.mFields.m16[7]));
+            OutputIp6Address(addr->mAddress);
+            OutputLine("");
         }
     }
     else
     {
-        if (strcmp(argv[0], "add") == 0)
+        if (strcmp(aArgs[0], "add") == 0)
         {
-            SuccessOrExit(error = ProcessIpAddrAdd(argc - 1, argv + 1));
+            SuccessOrExit(error = ProcessIpAddrAdd(aArgsLength - 1, aArgs + 1));
         }
-        else if (strcmp(argv[0], "del") == 0)
+        else if (strcmp(aArgs[0], "del") == 0)
         {
-            SuccessOrExit(error = ProcessIpAddrDel(argc - 1, argv + 1));
+            SuccessOrExit(error = ProcessIpAddrDel(aArgsLength - 1, aArgs + 1));
+        }
+        else if (strcmp(aArgs[0], "linklocal") == 0)
+        {
+            OutputIp6Address(*otThreadGetLinkLocalIp6Address(mInstance));
+            OutputLine("");
+        }
+        else if (strcmp(aArgs[0], "rloc") == 0)
+        {
+            OutputIp6Address(*otThreadGetRloc(mInstance));
+            OutputLine("");
+        }
+        else if (strcmp(aArgs[0], "mleid") == 0)
+        {
+            OutputIp6Address(*otThreadGetMeshLocalEid(mInstance));
+            OutputLine("");
         }
         else
         {
-            ExitNow(error = OT_ERROR_INVALID_ARGS);
+            ExitNow(error = OT_ERROR_INVALID_COMMAND);
         }
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-#ifndef OTDLL
-otError Interpreter::ProcessIpMulticastAddrAdd(int argc, char *argv[])
+otError Interpreter::ProcessIpMulticastAddrAdd(uint8_t aArgsLength, char *aArgs[])
 {
-    otError             error;
-    struct otIp6Address address;
+    otError      error;
+    otIp6Address address;
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
 
-    SuccessOrExit(error = otIp6AddressFromString(argv[0], &address));
+    SuccessOrExit(error = ParseAsIp6Address(aArgs[0], address));
     error = otIp6SubscribeMulticastAddress(mInstance, &address);
 
 exit:
     return error;
 }
 
-otError Interpreter::ProcessIpMulticastAddrDel(int argc, char *argv[])
+otError Interpreter::ProcessIpMulticastAddrDel(uint8_t aArgsLength, char *aArgs[])
 {
-    otError             error;
-    struct otIp6Address address;
+    otError      error;
+    otIp6Address address;
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
 
-    SuccessOrExit(error = otIp6AddressFromString(argv[0], &address));
+    SuccessOrExit(error = ParseAsIp6Address(aArgs[0], address));
     error = otIp6UnsubscribeMulticastAddress(mInstance, &address);
 
 exit:
     return error;
 }
 
-otError Interpreter::ProcessMulticastPromiscuous(int argc, char *argv[])
+otError Interpreter::ProcessMulticastPromiscuous(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        if (otIp6IsMulticastPromiscuousEnabled(mInstance))
-        {
-            mServer->OutputFormat("Enabled\r\n");
-        }
-        else
-        {
-            mServer->OutputFormat("Disabled\r\n");
-        }
+        OutputEnabledDisabledStatus(otIp6IsMulticastPromiscuousEnabled(mInstance));
     }
     else
     {
-        if (strcmp(argv[0], "enable") == 0)
+        if (strcmp(aArgs[0], "enable") == 0)
         {
             otIp6SetMulticastPromiscuousEnabled(mInstance, true);
         }
-        else if (strcmp(argv[0], "disable") == 0)
+        else if (strcmp(aArgs[0], "disable") == 0)
         {
             otIp6SetMulticastPromiscuousEnabled(mInstance, false);
         }
@@ -1357,75 +1994,74 @@ exit:
     return error;
 }
 
-void Interpreter::ProcessIpMulticastAddr(int argc, char *argv[])
+otError Interpreter::ProcessIpMulticastAddr(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
         for (const otNetifMulticastAddress *addr = otIp6GetMulticastAddresses(mInstance); addr; addr = addr->mNext)
         {
-            mServer->OutputFormat("%x:%x:%x:%x:%x:%x:%x:%x\r\n", HostSwap16(addr->mAddress.mFields.m16[0]),
-                                  HostSwap16(addr->mAddress.mFields.m16[1]), HostSwap16(addr->mAddress.mFields.m16[2]),
-                                  HostSwap16(addr->mAddress.mFields.m16[3]), HostSwap16(addr->mAddress.mFields.m16[4]),
-                                  HostSwap16(addr->mAddress.mFields.m16[5]), HostSwap16(addr->mAddress.mFields.m16[6]),
-                                  HostSwap16(addr->mAddress.mFields.m16[7]));
+            OutputIp6Address(addr->mAddress);
+            OutputLine("");
         }
     }
     else
     {
-        if (strcmp(argv[0], "add") == 0)
+        if (strcmp(aArgs[0], "add") == 0)
         {
-            SuccessOrExit(error = ProcessIpMulticastAddrAdd(argc - 1, argv + 1));
+            SuccessOrExit(error = ProcessIpMulticastAddrAdd(aArgsLength - 1, aArgs + 1));
         }
-        else if (strcmp(argv[0], "del") == 0)
+        else if (strcmp(aArgs[0], "del") == 0)
         {
-            SuccessOrExit(error = ProcessIpMulticastAddrDel(argc - 1, argv + 1));
+            SuccessOrExit(error = ProcessIpMulticastAddrDel(aArgsLength - 1, aArgs + 1));
         }
-        else if (strcmp(argv[0], "promiscuous") == 0)
+        else if (strcmp(aArgs[0], "promiscuous") == 0)
         {
-            SuccessOrExit(error = ProcessMulticastPromiscuous(argc - 1, argv + 1));
+            SuccessOrExit(error = ProcessMulticastPromiscuous(aArgsLength - 1, aArgs + 1));
         }
         else
         {
-            ExitNow(error = OT_ERROR_INVALID_ARGS);
+            ExitNow(error = OT_ERROR_INVALID_COMMAND);
         }
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
-#endif
 
-void Interpreter::ProcessKeySequence(int argc, char *argv[])
+otError Interpreter::ProcessKeySequence(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
-    long    value;
 
-    VerifyOrExit(argc == 1 || argc == 2, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength == 1 || aArgsLength == 2, error = OT_ERROR_INVALID_ARGS);
 
-    if (strcmp(argv[0], "counter") == 0)
+    if (strcmp(aArgs[0], "counter") == 0)
     {
-        if (argc == 1)
+        if (aArgsLength == 1)
         {
-            mServer->OutputFormat("%d\r\n", otThreadGetKeySequenceCounter(mInstance));
+            OutputLine("%d", otThreadGetKeySequenceCounter(mInstance));
         }
         else
         {
-            SuccessOrExit(error = ParseLong(argv[1], value));
-            otThreadSetKeySequenceCounter(mInstance, static_cast<uint32_t>(value));
+            uint32_t counter;
+
+            SuccessOrExit(error = ParseAsUint32(aArgs[1], counter));
+            otThreadSetKeySequenceCounter(mInstance, counter);
         }
     }
-    else if (strcmp(argv[0], "guardtime") == 0)
+    else if (strcmp(aArgs[0], "guardtime") == 0)
     {
-        if (argc == 1)
+        if (aArgsLength == 1)
         {
-            mServer->OutputFormat("%d\r\n", otThreadGetKeySwitchGuardTime(mInstance));
+            OutputLine("%d", otThreadGetKeySwitchGuardTime(mInstance));
         }
         else
         {
-            SuccessOrExit(error = ParseLong(argv[1], value));
-            otThreadSetKeySwitchGuardTime(mInstance, static_cast<uint32_t>(value));
+            uint32_t guardTime;
+
+            SuccessOrExit(error = ParseAsUint32(aArgs[1], guardTime));
+            otThreadSetKeySwitchGuardTime(mInstance, guardTime);
         }
     }
     else
@@ -1434,241 +2070,770 @@ void Interpreter::ProcessKeySequence(int argc, char *argv[])
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void Interpreter::ProcessLeaderData(int argc, char *argv[])
+otError Interpreter::ProcessLeaderData(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
     otError      error;
     otLeaderData leaderData;
 
     SuccessOrExit(error = otThreadGetLeaderData(mInstance, &leaderData));
 
-    mServer->OutputFormat("Partition ID: %u\r\n", leaderData.mPartitionId);
-    mServer->OutputFormat("Weighting: %d\r\n", leaderData.mWeighting);
-    mServer->OutputFormat("Data Version: %d\r\n", leaderData.mDataVersion);
-    mServer->OutputFormat("Stable Data Version: %d\r\n", leaderData.mStableDataVersion);
-    mServer->OutputFormat("Leader Router ID: %d\r\n", leaderData.mLeaderRouterId);
+    OutputLine("Partition ID: %u", leaderData.mPartitionId);
+    OutputLine("Weighting: %d", leaderData.mWeighting);
+    OutputLine("Data Version: %d", leaderData.mDataVersion);
+    OutputLine("Stable Data Version: %d", leaderData.mStableDataVersion);
+    OutputLine("Leader Router ID: %d", leaderData.mLeaderRouterId);
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
 #if OPENTHREAD_FTD
-void Interpreter::ProcessLeaderPartitionId(int argc, char *argv[])
+otError Interpreter::ProcessPartitionId(uint8_t aArgsLength, char *aArgs[])
 {
-    otError       error = OT_ERROR_NONE;
-    unsigned long value;
+    OT_UNUSED_VARIABLE(aArgs);
 
-    if (argc == 0)
+    otError error = OT_ERROR_INVALID_COMMAND;
+
+    if (aArgsLength == 0)
     {
-        mServer->OutputFormat("%u\r\n", otThreadGetLocalLeaderPartitionId(mInstance));
+        OutputLine("%u", otThreadGetPartitionId(mInstance));
+        error = OT_ERROR_NONE;
     }
-    else
+#if OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE
+    else if (strcmp(aArgs[0], "preferred") == 0)
     {
-        SuccessOrExit(error = ParseUnsignedLong(argv[0], value));
-        otThreadSetLocalLeaderPartitionId(mInstance, static_cast<uint32_t>(value));
+        if (aArgsLength == 1)
+        {
+            OutputLine("%u", otThreadGetPreferredLeaderPartitionId(mInstance));
+            error = OT_ERROR_NONE;
+        }
+        else if (aArgsLength == 2)
+        {
+            uint32_t partitionId;
+
+            SuccessOrExit(error = ParseAsUint32(aArgs[1], partitionId));
+            otThreadSetPreferredLeaderPartitionId(mInstance, partitionId);
+        }
     }
 
 exit:
-    AppendResult(error);
+#endif
+
+    return error;
 }
 
-void Interpreter::ProcessLeaderWeight(int argc, char *argv[])
+otError Interpreter::ProcessLeaderWeight(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
-    long    value;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        mServer->OutputFormat("%d\r\n", otThreadGetLocalLeaderWeight(mInstance));
+        OutputLine("%d", otThreadGetLocalLeaderWeight(mInstance));
     }
     else
     {
-        SuccessOrExit(error = ParseLong(argv[0], value));
-        otThreadSetLocalLeaderWeight(mInstance, static_cast<uint8_t>(value));
+        uint8_t weight;
+
+        SuccessOrExit(error = ParseAsUint8(aArgs[0], weight));
+        otThreadSetLocalLeaderWeight(mInstance, weight);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 #endif // OPENTHREAD_FTD
 
-#if OPENTHREAD_FTD
-void Interpreter::ProcessPSKc(int argc, char *argv[])
+#if OPENTHREAD_CONFIG_MLE_LINK_METRICS_ENABLE
+void Interpreter::HandleLinkMetricsReport(const otIp6Address *       aAddress,
+                                          const otLinkMetricsValues *aMetricsValues,
+                                          uint8_t                    aStatus,
+                                          void *                     aContext)
 {
-    otError error = OT_ERROR_NONE;
+    static_cast<Interpreter *>(aContext)->HandleLinkMetricsReport(aAddress, aMetricsValues, aStatus);
+}
 
-    if (argc == 0)
+void Interpreter::PrintLinkMetricsValue(const otLinkMetricsValues *aMetricsValues)
+{
+    const char kLinkMetricsTypeCount[]   = "(Count/Summation)";
+    const char kLinkMetricsTypeAverage[] = "(Exponential Moving Average)";
+
+    if (aMetricsValues->mMetrics.mPduCount)
     {
-        const uint8_t *currentPSKc = otThreadGetPSKc(mInstance);
+        OutputLine(" - PDU Counter: %d %s", aMetricsValues->mPduCountValue, kLinkMetricsTypeCount);
+    }
 
-        for (int i = 0; i < OT_PSKC_MAX_SIZE; i++)
-        {
-            mServer->OutputFormat("%02x", currentPSKc[i]);
-        }
+    if (aMetricsValues->mMetrics.mLqi)
+    {
+        OutputLine(" - LQI: %d %s", aMetricsValues->mLqiValue, kLinkMetricsTypeAverage);
+    }
 
-        mServer->OutputFormat("\r\n");
+    if (aMetricsValues->mMetrics.mLinkMargin)
+    {
+        OutputLine(" - Margin: %d (dB) %s", aMetricsValues->mLinkMarginValue, kLinkMetricsTypeAverage);
+    }
+
+    if (aMetricsValues->mMetrics.mRssi)
+    {
+        OutputLine(" - RSSI: %d (dBm) %s", aMetricsValues->mRssiValue, kLinkMetricsTypeAverage);
+    }
+}
+
+void Interpreter::HandleLinkMetricsReport(const otIp6Address *       aAddress,
+                                          const otLinkMetricsValues *aMetricsValues,
+                                          uint8_t                    aStatus)
+{
+    OutputFormat("Received Link Metrics Report from: ");
+    OutputIp6Address(*aAddress);
+    OutputLine("");
+
+    if (aMetricsValues != nullptr)
+    {
+        PrintLinkMetricsValue(aMetricsValues);
     }
     else
     {
-        uint8_t newPSKc[OT_PSKC_MAX_SIZE];
+        OutputLine("Link Metrics Report, status: %s", LinkMetricsStatusToStr(aStatus));
+    }
+}
 
-        VerifyOrExit(Hex2Bin(argv[0], newPSKc, sizeof(newPSKc)) == OT_PSKC_MAX_SIZE, error = OT_ERROR_PARSE);
-        SuccessOrExit(error = otThreadSetPSKc(mInstance, newPSKc));
+void Interpreter::HandleLinkMetricsMgmtResponse(const otIp6Address *aAddress, uint8_t aStatus, void *aContext)
+{
+    static_cast<Interpreter *>(aContext)->HandleLinkMetricsMgmtResponse(aAddress, aStatus);
+}
+
+void Interpreter::HandleLinkMetricsMgmtResponse(const otIp6Address *aAddress, uint8_t aStatus)
+{
+    OutputFormat("Received Link Metrics Management Response from: ");
+    OutputIp6Address(*aAddress);
+    OutputLine("");
+
+    OutputLine("Status: %s", LinkMetricsStatusToStr(aStatus));
+}
+
+void Interpreter::HandleLinkMetricsEnhAckProbingIe(otShortAddress             aShortAddress,
+                                                   const otExtAddress *       aExtAddress,
+                                                   const otLinkMetricsValues *aMetricsValues,
+                                                   void *                     aContext)
+{
+    static_cast<Interpreter *>(aContext)->HandleLinkMetricsEnhAckProbingIe(aShortAddress, aExtAddress, aMetricsValues);
+}
+
+void Interpreter::HandleLinkMetricsEnhAckProbingIe(otShortAddress             aShortAddress,
+                                                   const otExtAddress *       aExtAddress,
+                                                   const otLinkMetricsValues *aMetricsValues)
+{
+    OutputFormat("Received Link Metrics data in Enh Ack from neighbor, short address:0x%02x , extended address:",
+                 aShortAddress);
+    OutputExtAddress(*aExtAddress);
+    OutputLine("");
+
+    if (aMetricsValues != nullptr)
+    {
+        PrintLinkMetricsValue(aMetricsValues);
+    }
+}
+
+const char *Interpreter::LinkMetricsStatusToStr(uint8_t aStatus)
+{
+    uint8_t            strIndex                = 0;
+    static const char *linkMetricsStatusText[] = {
+        "Success",
+        "Cannot support new series",
+        "Series ID already registered",
+        "Series ID not recognized",
+        "No matching series ID",
+        "Other error",
+        "Unknown error",
+    };
+
+    switch (aStatus)
+    {
+    case OT_LINK_METRICS_STATUS_SUCCESS:
+        strIndex = 0;
+        break;
+    case OT_LINK_METRICS_STATUS_CANNOT_SUPPORT_NEW_SERIES:
+        strIndex = 1;
+        break;
+    case OT_LINK_METRICS_STATUS_SERIESID_ALREADY_REGISTERED:
+        strIndex = 2;
+        break;
+    case OT_LINK_METRICS_STATUS_SERIESID_NOT_RECOGNIZED:
+        strIndex = 3;
+        break;
+    case OT_LINK_METRICS_STATUS_NO_MATCHING_FRAMES_RECEIVED:
+        strIndex = 4;
+        break;
+    case OT_LINK_METRICS_STATUS_OTHER_ERROR:
+        strIndex = 5;
+        break;
+    default:
+        strIndex = 6;
+        break;
+    }
+
+    return linkMetricsStatusText[strIndex];
+}
+
+otError Interpreter::ProcessLinkMetrics(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_INVALID_COMMAND;
+
+    VerifyOrExit(aArgsLength >= 1);
+
+    if (strcmp(aArgs[0], "query") == 0)
+    {
+        error = ProcessLinkMetricsQuery(aArgsLength - 1, aArgs + 1);
+    }
+    else if (strcmp(aArgs[0], "mgmt") == 0)
+    {
+        error = ProcessLinkMetricsMgmt(aArgsLength - 1, aArgs + 1);
+    }
+    else if (strcmp(aArgs[0], "probe") == 0)
+    {
+        error = ProcessLinkMetricsProbe(aArgsLength - 1, aArgs + 1);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
-#endif
 
-void Interpreter::ProcessMasterKey(int argc, char *argv[])
+otError Interpreter::ProcessLinkMetricsQuery(uint8_t aArgsLength, char *aArgs[])
+{
+    otError       error = OT_ERROR_INVALID_ARGS;
+    otIp6Address  address;
+    otLinkMetrics linkMetrics;
+
+    VerifyOrExit(aArgsLength == 3);
+
+    SuccessOrExit(error = ParseAsIp6Address(aArgs[0], address));
+
+    if (strcmp(aArgs[1], "single") == 0)
+    {
+        SuccessOrExit(error = ParseLinkMetricsFlags(linkMetrics, aArgs[2]));
+        error = otLinkMetricsQuery(mInstance, &address, /* aSeriesId */ 0, &linkMetrics,
+                                   &Interpreter::HandleLinkMetricsReport, this);
+    }
+    else if (strcmp(aArgs[1], "forward") == 0)
+    {
+        uint8_t seriesId;
+        SuccessOrExit(error = ParseAsUint8(aArgs[2], seriesId));
+        error = otLinkMetricsQuery(mInstance, &address, seriesId, nullptr, &Interpreter::HandleLinkMetricsReport, this);
+    }
+
+exit:
+    return error;
+}
+
+otError Interpreter::ParseLinkMetricsFlags(otLinkMetrics &aLinkMetrics, char *aFlags)
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc == 0)
-    {
-        otBufferPtr key(reinterpret_cast<const uint8_t *>(otThreadGetMasterKey(mInstance)));
+    memset(&aLinkMetrics, 0, sizeof(aLinkMetrics));
 
-        for (int i = 0; i < OT_MASTER_KEY_SIZE; i++)
+    for (char *arg = aFlags; *arg != '\0'; arg++)
+    {
+        switch (*arg)
         {
-            mServer->OutputFormat("%02x", key[i]);
+        case 'p':
+            aLinkMetrics.mPduCount = true;
+            break;
+
+        case 'q':
+            aLinkMetrics.mLqi = true;
+            break;
+
+        case 'm':
+            aLinkMetrics.mLinkMargin = true;
+            break;
+
+        case 'r':
+            aLinkMetrics.mRssi = true;
+            break;
+
+        default:
+            ExitNow(error = OT_ERROR_INVALID_ARGS);
+        }
+    }
+
+exit:
+    return error;
+}
+
+otError Interpreter::ProcessLinkMetricsMgmt(uint8_t aArgsLength, char *aArgs[])
+{
+    otError                  error = OT_ERROR_INVALID_ARGS;
+    otIp6Address             address;
+    otLinkMetricsSeriesFlags seriesFlags;
+    bool                     clear = false;
+
+    VerifyOrExit(aArgsLength >= 2);
+
+    SuccessOrExit(error = ParseAsIp6Address(aArgs[0], address));
+
+    memset(&seriesFlags, 0, sizeof(otLinkMetricsSeriesFlags));
+
+    if (strcmp(aArgs[1], "forward") == 0)
+    {
+        uint8_t       seriesId;
+        otLinkMetrics linkMetrics;
+
+        VerifyOrExit(aArgsLength >= 4);
+
+        memset(&linkMetrics, 0, sizeof(otLinkMetrics));
+        SuccessOrExit(error = ParseAsUint8(aArgs[2], seriesId));
+
+        for (char *arg = aArgs[3]; *arg != '\0'; arg++)
+        {
+            switch (*arg)
+            {
+            case 'l':
+                seriesFlags.mLinkProbe = true;
+                break;
+
+            case 'd':
+                seriesFlags.mMacData = true;
+                break;
+
+            case 'r':
+                seriesFlags.mMacDataRequest = true;
+                break;
+
+            case 'a':
+                seriesFlags.mMacAck = true;
+                break;
+
+            case 'X':
+                VerifyOrExit(arg == aArgs[3] && *(arg + 1) == '\0' && aArgsLength == 4,
+                             error = OT_ERROR_INVALID_ARGS); // Ensure the flags only contain 'X'
+                clear = true;
+                break;
+
+            default:
+                ExitNow(error = OT_ERROR_INVALID_ARGS);
+            }
         }
 
-        mServer->OutputFormat("\r\n");
+        if (!clear)
+        {
+            VerifyOrExit(aArgsLength == 5);
+            SuccessOrExit(error = ParseLinkMetricsFlags(linkMetrics, aArgs[4]));
+        }
+
+        error = otLinkMetricsConfigForwardTrackingSeries(mInstance, &address, seriesId, seriesFlags,
+                                                         clear ? nullptr : &linkMetrics,
+                                                         &Interpreter::HandleLinkMetricsMgmtResponse, this);
+    }
+    else if (strcmp(aArgs[1], "enhanced-ack") == 0)
+    {
+        otLinkMetricsEnhAckFlags enhAckFlags;
+        otLinkMetrics            linkMetrics;
+        otLinkMetrics *          pLinkMetrics = &linkMetrics;
+
+        VerifyOrExit(aArgsLength >= 3);
+
+        if (strcmp(aArgs[2], "clear") == 0)
+        {
+            enhAckFlags  = OT_LINK_METRICS_ENH_ACK_CLEAR;
+            pLinkMetrics = nullptr;
+        }
+        else if (strcmp(aArgs[2], "register") == 0)
+        {
+            enhAckFlags = OT_LINK_METRICS_ENH_ACK_REGISTER;
+            VerifyOrExit(aArgsLength >= 4);
+            SuccessOrExit(error = ParseLinkMetricsFlags(linkMetrics, aArgs[3]));
+#if OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE
+            if (aArgsLength > 4 && strcmp(aArgs[4], "r") == 0)
+            {
+                linkMetrics.mReserved = true;
+            }
+#endif
+        }
+        else
+        {
+            ExitNow();
+        }
+
+        error = otLinkMetricsConfigEnhAckProbing(mInstance, &address, enhAckFlags, pLinkMetrics,
+                                                 &Interpreter::HandleLinkMetricsMgmtResponse, this,
+                                                 &Interpreter::HandleLinkMetricsEnhAckProbingIe, this);
+    }
+
+exit:
+    return error;
+}
+
+otError Interpreter::ProcessLinkMetricsProbe(uint8_t aArgsLength, char *aArgs[])
+{
+    otError      error = OT_ERROR_INVALID_ARGS;
+    otIp6Address address;
+    uint8_t      seriesId = 0;
+    uint8_t      length   = 0;
+
+    VerifyOrExit(aArgsLength == 3);
+
+    SuccessOrExit(error = ParseAsIp6Address(aArgs[0], address));
+    SuccessOrExit(error = ParseAsUint8(aArgs[1], seriesId));
+    SuccessOrExit(error = ParseAsUint8(aArgs[2], length));
+
+    error = otLinkMetricsSendLinkProbe(mInstance, &address, seriesId, length);
+
+exit:
+    return error;
+}
+#endif // OPENTHREAD_CONFIG_MLE_LINK_METRICS_ENABLE
+
+#if OPENTHREAD_FTD
+otError Interpreter::ProcessPskc(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    if (aArgsLength == 0)
+    {
+        const otPskc *pskc = otThreadGetPskc(mInstance);
+
+        OutputBytes(pskc->m8);
+        OutputLine("");
+    }
+    else
+    {
+        otPskc pskc;
+
+        if (aArgsLength == 1)
+        {
+            SuccessOrExit(error = ParseAsHexString(aArgs[0], pskc.m8));
+        }
+        else if (!strcmp(aArgs[0], "-p"))
+        {
+            SuccessOrExit(error = otDatasetGeneratePskc(
+                              aArgs[1], reinterpret_cast<const otNetworkName *>(otThreadGetNetworkName(mInstance)),
+                              otThreadGetExtendedPanId(mInstance), &pskc));
+        }
+        else
+        {
+            ExitNow(error = OT_ERROR_INVALID_ARGS);
+        }
+
+        SuccessOrExit(error = otThreadSetPskc(mInstance, &pskc));
+    }
+
+exit:
+    return error;
+}
+#endif // OPENTHREAD_FTD
+
+otError Interpreter::ProcessMasterKey(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    if (aArgsLength == 0)
+    {
+        OutputBytes(otThreadGetMasterKey(mInstance)->m8);
+        OutputLine("");
     }
     else
     {
         otMasterKey key;
 
-        VerifyOrExit(Hex2Bin(argv[0], key.m8, sizeof(key.m8)) == OT_MASTER_KEY_SIZE, error = OT_ERROR_PARSE);
+        SuccessOrExit(error = ParseAsHexString(aArgs[0], key.m8));
         SuccessOrExit(error = otThreadSetMasterKey(mInstance, &key));
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void Interpreter::ProcessMode(int argc, char *argv[])
+#if OPENTHREAD_FTD && OPENTHREAD_CONFIG_TMF_PROXY_MLR_ENABLE && OPENTHREAD_CONFIG_COMMISSIONER_ENABLE
+
+otError Interpreter::ProcessMlr(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_COMMAND);
+
+    if (!strcmp(aArgs[0], "reg"))
+    {
+        error = ProcessMlrReg(aArgsLength - 1, aArgs + 1);
+    }
+    else
+    {
+        error = OT_ERROR_INVALID_COMMAND;
+    }
+
+exit:
+    return error;
+}
+
+otError Interpreter::ProcessMlrReg(uint8_t aArgsLength, char *aArgs[])
+{
+    otError      error = OT_ERROR_NONE;
+    otIp6Address addresses[kIPv6AddressesNumMax];
+    uint32_t     timeout;
+    uint8_t      i;
+
+    VerifyOrExit(aArgsLength >= 1, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength <= kIPv6AddressesNumMax + 1, error = OT_ERROR_INVALID_ARGS);
+
+    for (i = 0; i < aArgsLength && i < kIPv6AddressesNumMax; i++)
+    {
+        if (ParseAsIp6Address(aArgs[i], addresses[i]) != OT_ERROR_NONE)
+        {
+            break;
+        }
+    }
+
+    VerifyOrExit(i > 0 && (i == aArgsLength || i == aArgsLength - 1), error = OT_ERROR_INVALID_ARGS);
+
+    if (i == aArgsLength - 1)
+    {
+        // Parse the last argument as a timeout in seconds
+        SuccessOrExit(error = ParseAsUint32(aArgs[i], timeout));
+    }
+
+    SuccessOrExit(error = otIp6RegisterMulticastListeners(mInstance, addresses, i,
+                                                          i == aArgsLength - 1 ? &timeout : nullptr,
+                                                          Interpreter::HandleMlrRegResult, this));
+
+    error = OT_ERROR_PENDING;
+
+exit:
+    return error;
+}
+
+void Interpreter::HandleMlrRegResult(void *              aContext,
+                                     otError             aError,
+                                     uint8_t             aMlrStatus,
+                                     const otIp6Address *aFailedAddresses,
+                                     uint8_t             aFailedAddressNum)
+{
+    static_cast<Interpreter *>(aContext)->HandleMlrRegResult(aError, aMlrStatus, aFailedAddresses, aFailedAddressNum);
+}
+
+void Interpreter::HandleMlrRegResult(otError             aError,
+                                     uint8_t             aMlrStatus,
+                                     const otIp6Address *aFailedAddresses,
+                                     uint8_t             aFailedAddressNum)
+{
+    if (aError == OT_ERROR_NONE)
+    {
+        OutputLine("status %d, %d failed", aMlrStatus, aFailedAddressNum);
+
+        for (uint8_t i = 0; i < aFailedAddressNum; i++)
+        {
+            OutputIp6Address(aFailedAddresses[i]);
+            OutputLine("");
+        }
+    }
+
+    OutputResult(aError);
+}
+
+#endif // (OPENTHREAD_FTD && OPENTHREAD_CONFIG_TMF_PROXY_MLR_ENABLE) && OPENTHREAD_CONFIG_COMMISSIONER_ENABLE
+
+otError Interpreter::ProcessMode(uint8_t aArgsLength, char *aArgs[])
 {
     otError          error = OT_ERROR_NONE;
     otLinkModeConfig linkMode;
 
     memset(&linkMode, 0, sizeof(otLinkModeConfig));
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
         linkMode = otThreadGetLinkMode(mInstance);
 
-        if (linkMode.mRxOnWhenIdle)
+        if (!(linkMode.mRxOnWhenIdle || linkMode.mDeviceType || linkMode.mNetworkData))
         {
-            mServer->OutputFormat("r");
+            OutputFormat("-");
+        }
+        else
+        {
+            if (linkMode.mRxOnWhenIdle)
+            {
+                OutputFormat("r");
+            }
+
+            if (linkMode.mDeviceType)
+            {
+                OutputFormat("d");
+            }
+
+            if (linkMode.mNetworkData)
+            {
+                OutputFormat("n");
+            }
         }
 
-        if (linkMode.mSecureDataRequests)
-        {
-            mServer->OutputFormat("s");
-        }
+        OutputLine("");
 
-        if (linkMode.mDeviceType)
-        {
-            mServer->OutputFormat("d");
-        }
-
-        if (linkMode.mNetworkData)
-        {
-            mServer->OutputFormat("n");
-        }
-
-        mServer->OutputFormat("\r\n");
+        ExitNow();
     }
-    else
+
+    if (strcmp(aArgs[0], "-") != 0)
     {
-        for (char *arg = argv[0]; *arg != '\0'; arg++)
+        for (char *arg = aArgs[0]; *arg != '\0'; arg++)
         {
             switch (*arg)
             {
             case 'r':
-                linkMode.mRxOnWhenIdle = 1;
-                break;
-
-            case 's':
-                linkMode.mSecureDataRequests = 1;
+                linkMode.mRxOnWhenIdle = true;
                 break;
 
             case 'd':
-                linkMode.mDeviceType = 1;
+                linkMode.mDeviceType = true;
                 break;
 
             case 'n':
-                linkMode.mNetworkData = 1;
+                linkMode.mNetworkData = true;
                 break;
 
             default:
-                ExitNow(error = OT_ERROR_PARSE);
+                ExitNow(error = OT_ERROR_INVALID_ARGS);
             }
         }
+    }
 
-        SuccessOrExit(error = otThreadSetLinkMode(mInstance, linkMode));
+    error = otThreadSetLinkMode(mInstance, linkMode);
+
+exit:
+    return error;
+}
+
+otError Interpreter::ProcessMultiRadio(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    OT_UNUSED_VARIABLE(aArgs);
+
+    if (aArgsLength == 0)
+    {
+        bool isFirst = true;
+
+        OutputFormat("[");
+#if OPENTHREAD_CONFIG_RADIO_LINK_IEEE_802_15_4_ENABLE
+        OutputFormat("15.4");
+        isFirst = false;
+#endif
+#if OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE
+        OutputFormat("%sTREL", isFirst ? "" : ", ");
+#endif
+        OutputLine("]");
+
+        OT_UNUSED_VARIABLE(isFirst);
+    }
+#if OPENTHREAD_CONFIG_MULTI_RADIO
+    else if (strcmp(aArgs[0], "neighbor") == 0)
+    {
+        otMultiRadioNeighborInfo multiRadioInfo;
+
+        VerifyOrExit(aArgsLength == 2, error = OT_ERROR_INVALID_ARGS);
+
+        if (strcmp(aArgs[1], "list") == 0)
+        {
+            otNeighborInfoIterator iterator = OT_NEIGHBOR_INFO_ITERATOR_INIT;
+            otNeighborInfo         neighInfo;
+
+            while (otThreadGetNextNeighborInfo(mInstance, &iterator, &neighInfo) == OT_ERROR_NONE)
+            {
+                if (otMultiRadioGetNeighborInfo(mInstance, &neighInfo.mExtAddress, &multiRadioInfo) != OT_ERROR_NONE)
+                {
+                    continue;
+                }
+
+                OutputFormat("ExtAddr:");
+                OutputExtAddress(neighInfo.mExtAddress);
+                OutputFormat(", RLOC16:0x%04x, Radios:", neighInfo.mRloc16);
+                OutputMultiRadioInfo(multiRadioInfo);
+            }
+        }
+        else
+        {
+            otExtAddress extAddress;
+
+            SuccessOrExit(error = ParseAsHexString(aArgs[1], extAddress.m8));
+            SuccessOrExit(error = otMultiRadioGetNeighborInfo(mInstance, &extAddress, &multiRadioInfo));
+            OutputMultiRadioInfo(multiRadioInfo);
+        }
+    }
+#endif // OPENTHREAD_CONFIG_MULTI_RADIO
+    else
+    {
+        ExitNow(error = OT_ERROR_INVALID_COMMAND);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
+#if OPENTHREAD_CONFIG_MULTI_RADIO
+void Interpreter::OutputMultiRadioInfo(const otMultiRadioNeighborInfo &aMultiRadioInfo)
+{
+    bool isFirst = true;
+
+    OutputFormat("[");
+
+    if (aMultiRadioInfo.mSupportsIeee802154)
+    {
+        OutputFormat("15.4(%d)", aMultiRadioInfo.mIeee802154Info.mPreference);
+        isFirst = false;
+    }
+
+    if (aMultiRadioInfo.mSupportsTrelUdp6)
+    {
+        OutputFormat("%sTREL(%d)", isFirst ? "" : ", ", aMultiRadioInfo.mTrelUdp6Info.mPreference);
+    }
+
+    OutputLine("]");
+}
+#endif // OPENTHREAD_CONFIG_MULTI_RADIO
+
 #if OPENTHREAD_FTD
-void Interpreter::ProcessNeighbor(int argc, char *argv[])
+otError Interpreter::ProcessNeighbor(uint8_t aArgsLength, char *aArgs[])
 {
     otError                error = OT_ERROR_NONE;
     otNeighborInfo         neighborInfo;
     bool                   isTable;
     otNeighborInfoIterator iterator = OT_NEIGHBOR_INFO_ITERATOR_INIT;
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
 
-    isTable = (strcmp(argv[0], "table") == 0);
+    isTable = (strcmp(aArgs[0], "table") == 0);
 
-    if (isTable || strcmp(argv[0], "list") == 0)
+    if (isTable || strcmp(aArgs[0], "list") == 0)
     {
         if (isTable)
         {
-            mServer->OutputFormat("| Role | RLOC16 | Age | Avg RSSI | Last RSSI |R|S|D|N| Extended MAC     |\r\n");
-            mServer->OutputFormat("+------+--------+-----+----------+-----------+-+-+-+-+------------------+\r\n");
+            OutputLine("| Role | RLOC16 | Age | Avg RSSI | Last RSSI |R|D|N| Extended MAC     |");
+            OutputLine("+------+--------+-----+----------+-----------+-+-+-+------------------+");
         }
 
         while (otThreadGetNextNeighborInfo(mInstance, &iterator, &neighborInfo) == OT_ERROR_NONE)
         {
             if (isTable)
             {
-                mServer->OutputFormat("| %3c  ", neighborInfo.mIsChild ? 'C' : 'R');
-                mServer->OutputFormat("| 0x%04x ", neighborInfo.mRloc16);
-                mServer->OutputFormat("| %3d ", neighborInfo.mAge);
-                mServer->OutputFormat("| %8d ", neighborInfo.mAverageRssi);
-                mServer->OutputFormat("| %9d ", neighborInfo.mLastRssi);
-                mServer->OutputFormat("|%1d", neighborInfo.mRxOnWhenIdle);
-                mServer->OutputFormat("|%1d", neighborInfo.mSecureDataRequest);
-                mServer->OutputFormat("|%1d", neighborInfo.mFullThreadDevice);
-                mServer->OutputFormat("|%1d", neighborInfo.mFullNetworkData);
-                mServer->OutputFormat("| ");
-
-                for (size_t j = 0; j < sizeof(neighborInfo.mExtAddress); j++)
-                {
-                    mServer->OutputFormat("%02x", neighborInfo.mExtAddress.m8[j]);
-                }
-
-                mServer->OutputFormat(" |\r\n");
+                OutputFormat("| %3c  ", neighborInfo.mIsChild ? 'C' : 'R');
+                OutputFormat("| 0x%04x ", neighborInfo.mRloc16);
+                OutputFormat("| %3d ", neighborInfo.mAge);
+                OutputFormat("| %8d ", neighborInfo.mAverageRssi);
+                OutputFormat("| %9d ", neighborInfo.mLastRssi);
+                OutputFormat("|%1d", neighborInfo.mRxOnWhenIdle);
+                OutputFormat("|%1d", neighborInfo.mFullThreadDevice);
+                OutputFormat("|%1d", neighborInfo.mFullNetworkData);
+                OutputFormat("| ");
+                OutputExtAddress(neighborInfo.mExtAddress);
+                OutputLine(" |");
             }
             else
             {
-                mServer->OutputFormat("0x%04x ", neighborInfo.mRloc16);
+                OutputFormat("0x%04x ", neighborInfo.mRloc16);
             }
         }
 
-        mServer->OutputFormat("\r\n");
+        OutputLine("");
     }
     else
     {
@@ -1676,182 +2841,240 @@ void Interpreter::ProcessNeighbor(int argc, char *argv[])
     }
 
 exit:
-    AppendResult(error);
-}
-#endif
-
-#if OPENTHREAD_ENABLE_SERVICE
-void Interpreter::ProcessNetworkDataShow(int argc, char *argv[])
-{
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
-
-    otError error = OT_ERROR_NONE;
-    uint8_t data[255];
-    uint8_t len = sizeof(data);
-
-    SuccessOrExit(error = otNetDataGet(mInstance, false, data, &len));
-
-    this->OutputBytes(data, static_cast<uint8_t>(len));
-    mServer->OutputFormat("\r\n");
-
-exit:
-    AppendResult(error);
-}
-
-void Interpreter::ProcessService(int argc, char *argv[])
-{
-    otError error = OT_ERROR_NONE;
-
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
-
-    if (strcmp(argv[0], "add") == 0)
-    {
-        otServiceConfig cfg;
-        long            enterpriseNumber;
-        size_t          length;
-
-        VerifyOrExit(argc > 3, error = OT_ERROR_INVALID_ARGS);
-
-        SuccessOrExit(error = ParseLong(argv[1], enterpriseNumber));
-        cfg.mEnterpriseNumber = static_cast<uint32_t>(enterpriseNumber);
-
-        length = strlen(argv[2]);
-        VerifyOrExit(length <= sizeof(cfg.mServiceData), error = OT_ERROR_NO_BUFS);
-        cfg.mServiceDataLength = static_cast<uint8_t>(length);
-        memcpy(cfg.mServiceData, argv[2], cfg.mServiceDataLength);
-
-        length = strlen(argv[3]);
-        VerifyOrExit(length <= sizeof(cfg.mServerConfig.mServerData), error = OT_ERROR_NO_BUFS);
-        cfg.mServerConfig.mServerDataLength = static_cast<uint8_t>(length);
-        memcpy(cfg.mServerConfig.mServerData, argv[3], cfg.mServerConfig.mServerDataLength);
-
-        cfg.mServerConfig.mStable = true;
-
-        SuccessOrExit(error = otServerAddService(mInstance, &cfg));
-    }
-    else if (strcmp(argv[0], "remove") == 0)
-    {
-        long enterpriseNumber = 0;
-
-        VerifyOrExit(argc > 2, error = OT_ERROR_INVALID_ARGS);
-
-        SuccessOrExit(error = ParseLong(argv[1], enterpriseNumber));
-
-        SuccessOrExit(error = otServerRemoveService(mInstance, static_cast<uint32_t>(enterpriseNumber),
-                                                    reinterpret_cast<uint8_t *>(argv[2]),
-                                                    static_cast<uint8_t>(strlen(argv[2]))));
-    }
-    else
-    {
-        ExitNow(error = OT_ERROR_INVALID_ARGS);
-    }
-
-exit:
-    AppendResult(error);
-}
-#endif
-
-#if OPENTHREAD_ENABLE_BORDER_ROUTER || OPENTHREAD_ENABLE_SERVICE
-void Interpreter::ProcessNetworkDataRegister(int argc, char *argv[])
-{
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
-
-    otError error = OT_ERROR_NONE;
-#if OPENTHREAD_ENABLE_BORDER_ROUTER
-    SuccessOrExit(error = otBorderRouterRegister(mInstance));
-#else
-    SuccessOrExit(error = otServerRegister(mInstance));
-#endif
-
-exit:
-    AppendResult(error);
-}
-#endif // OPENTHREAD_ENABLE_BORDER_ROUTER || OPENTHREAD_ENABLE_SERVICE
-
-#if OPENTHREAD_FTD
-void Interpreter::ProcessNetworkIdTimeout(int argc, char *argv[])
-{
-    otError error = OT_ERROR_NONE;
-    long    value;
-
-    if (argc == 0)
-    {
-        mServer->OutputFormat("%d\r\n", otThreadGetNetworkIdTimeout(mInstance));
-    }
-    else
-    {
-        SuccessOrExit(error = ParseLong(argv[0], value));
-        otThreadSetNetworkIdTimeout(mInstance, static_cast<uint8_t>(value));
-    }
-
-exit:
-    AppendResult(error);
+    return error;
 }
 #endif // OPENTHREAD_FTD
 
-void Interpreter::ProcessNetworkName(int argc, char *argv[])
+#if OPENTHREAD_CONFIG_PLATFORM_NETIF_ENABLE
+otError Interpreter::ProcessNetif(uint8_t aArgsLength, char *aArgs[])
 {
-    otError error = OT_ERROR_NONE;
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
-    if (argc == 0)
+    otError      error    = OT_ERROR_NONE;
+    const char * netif    = nullptr;
+    unsigned int netifidx = 0;
+
+    SuccessOrExit(error = otPlatGetNetif(mInstance, &netif, &netifidx));
+
+    OutputLine("%s:%u", netif ? netif : "(null)", netifidx);
+
+exit:
+    return error;
+}
+#endif
+
+otError Interpreter::ProcessNetstat(uint8_t aArgsLength, char *aArgs[])
+{
+    otUdpSocket *socket = otUdpGetSockets(mInstance);
+
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
+
+    OutputLine("|                 Local Address                 |                  Peer Address                 |");
+    OutputLine("+-----------------------------------------------+-----------------------------------------------+");
+
+    while (socket)
     {
-        otStringPtr networkName(otThreadGetNetworkName(mInstance));
-        mServer->OutputFormat("%.*s\r\n", OT_NETWORK_NAME_MAX_SIZE, (const char *)networkName);
+        constexpr int kMaxOutputLength = 45;
+        int           outputLength;
+
+        OutputFormat("| ");
+
+        outputLength = OutputSocketAddress(socket->mSockName);
+        for (int i = outputLength; 0 <= i && i < kMaxOutputLength; ++i)
+        {
+            OutputFormat(" ");
+        }
+        OutputFormat(" | ");
+
+        outputLength = OutputSocketAddress(socket->mPeerName);
+        for (int i = outputLength; 0 <= i && i < kMaxOutputLength; ++i)
+        {
+            OutputFormat(" ");
+        }
+        OutputLine(" |");
+
+        socket = socket->mNext;
+    }
+
+    return OT_ERROR_NONE;
+}
+
+int Interpreter::OutputSocketAddress(const otSockAddr &aAddress)
+{
+    int outputLength;
+    int result = 0;
+
+    VerifyOrExit((outputLength = OutputIp6Address(aAddress.mAddress)) >= 0, result = -1);
+    result += outputLength;
+
+    VerifyOrExit((outputLength = OutputFormat(":")) >= 0, result = -1);
+    result += outputLength;
+    if (aAddress.mPort == 0)
+    {
+        VerifyOrExit((outputLength = OutputFormat("*")) >= 0, result = -1);
+        result += outputLength;
     }
     else
     {
-        SuccessOrExit(error = otThreadSetNetworkName(mInstance, argv[0]));
+        VerifyOrExit((outputLength = OutputFormat("%d", aAddress.mPort)) >= 0, result = -1);
+        result += outputLength;
     }
 
 exit:
-    AppendResult(error);
+    return result;
 }
 
-#if OPENTHREAD_CONFIG_ENABLE_TIME_SYNC
-void Interpreter::ProcessNetworkTime(int argc, char *argv[])
+#if OPENTHREAD_CONFIG_TMF_NETDATA_SERVICE_ENABLE
+otError Interpreter::ProcessServiceList(void)
+{
+    otNetworkDataIterator iterator = OT_NETWORK_DATA_ITERATOR_INIT;
+    otServiceConfig       config;
+
+    while (otServerGetNextService(mInstance, &iterator, &config) == OT_ERROR_NONE)
+    {
+        mNetworkData.OutputService(config);
+    }
+
+    return OT_ERROR_NONE;
+}
+
+otError Interpreter::ProcessService(uint8_t aArgsLength, char *aArgs[])
+{
+    otError         error = OT_ERROR_INVALID_COMMAND;
+    otServiceConfig cfg;
+
+    if (aArgsLength == 0)
+    {
+        error = ProcessServiceList();
+    }
+    else
+    {
+        uint16_t length;
+
+        VerifyOrExit(aArgsLength > 2, error = OT_ERROR_INVALID_ARGS);
+
+        SuccessOrExit(error = ParseAsUint32(aArgs[1], cfg.mEnterpriseNumber));
+
+        length = sizeof(cfg.mServiceData);
+        SuccessOrExit(error = ParseAsHexString(aArgs[2], length, cfg.mServiceData));
+        VerifyOrExit(length > 0, error = OT_ERROR_INVALID_ARGS);
+        cfg.mServiceDataLength = static_cast<uint8_t>(length);
+
+        if (strcmp(aArgs[0], "add") == 0)
+        {
+            VerifyOrExit(aArgsLength > 3, error = OT_ERROR_INVALID_ARGS);
+
+            length = sizeof(cfg.mServerConfig.mServerData);
+            SuccessOrExit(error = ParseAsHexString(aArgs[3], length, cfg.mServerConfig.mServerData));
+            VerifyOrExit(length > 0, error = OT_ERROR_INVALID_ARGS);
+            cfg.mServerConfig.mServerDataLength = static_cast<uint8_t>(length);
+
+            cfg.mServerConfig.mStable = true;
+
+            error = otServerAddService(mInstance, &cfg);
+        }
+        else if (strcmp(aArgs[0], "remove") == 0)
+        {
+            error = otServerRemoveService(mInstance, cfg.mEnterpriseNumber, cfg.mServiceData, cfg.mServiceDataLength);
+        }
+    }
+
+exit:
+    return error;
+}
+#endif // OPENTHREAD_CONFIG_TMF_NETDATA_SERVICE_ENABLE
+
+otError Interpreter::ProcessNetworkData(uint8_t aArgsLength, char *aArgs[])
+{
+    return mNetworkData.Process(aArgsLength, aArgs);
+}
+
+#if OPENTHREAD_FTD
+otError Interpreter::ProcessNetworkIdTimeout(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
-    long    value;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
+    {
+        OutputLine("%d", otThreadGetNetworkIdTimeout(mInstance));
+    }
+    else
+    {
+        uint8_t timeout;
+
+        SuccessOrExit(error = ParseAsUint8(aArgs[0], timeout));
+        otThreadSetNetworkIdTimeout(mInstance, timeout);
+    }
+
+exit:
+    return error;
+}
+#endif
+
+otError Interpreter::ProcessNetworkName(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    if (aArgsLength == 0)
+    {
+        OutputLine("%s", otThreadGetNetworkName(mInstance));
+    }
+    else
+    {
+        SuccessOrExit(error = otThreadSetNetworkName(mInstance, aArgs[0]));
+    }
+
+exit:
+    return error;
+}
+
+#if OPENTHREAD_CONFIG_TIME_SYNC_ENABLE
+otError Interpreter::ProcessNetworkTime(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    if (aArgsLength == 0)
     {
         uint64_t            time;
         otNetworkTimeStatus networkTimeStatus;
 
-        networkTimeStatus = otNetworkTimeGet(mInstance, time);
+        networkTimeStatus = otNetworkTimeGet(mInstance, &time);
 
-        mServer->OutputFormat("Network Time:     %luus", time);
+        OutputFormat("Network Time:     %luus", time);
 
         switch (networkTimeStatus)
         {
         case OT_NETWORK_TIME_UNSYNCHRONIZED:
-            mServer->OutputFormat(" (unsynchronized)\r\n");
+            OutputLine(" (unsynchronized)");
             break;
 
         case OT_NETWORK_TIME_RESYNC_NEEDED:
-            mServer->OutputFormat(" (resync needed)\r\n");
+            OutputLine(" (resync needed)");
             break;
 
         case OT_NETWORK_TIME_SYNCHRONIZED:
-            mServer->OutputFormat(" (synchronized)\r\n");
+            OutputLine(" (synchronized)");
             break;
 
         default:
             break;
         }
 
-        mServer->OutputFormat("Time Sync Period: %ds\r\n", otNetworkTimeGetSyncPeriod(mInstance));
-        mServer->OutputFormat("XTAL Threshold:   %dppm\r\n", otNetworkTimeGetXtalThreshold(mInstance));
+        OutputLine("Time Sync Period: %ds", otNetworkTimeGetSyncPeriod(mInstance));
+        OutputLine("XTAL Threshold:   %dppm", otNetworkTimeGetXtalThreshold(mInstance));
     }
-    else if (argc == 2)
+    else if (aArgsLength == 2)
     {
-        SuccessOrExit(error = ParseLong(argv[0], value));
-        SuccessOrExit(error = otNetworkTimeSetSyncPeriod(mInstance, static_cast<uint16_t>(value)));
+        uint16_t period;
+        uint16_t xtalThreshold;
 
-        SuccessOrExit(error = ParseLong(argv[1], value));
-        SuccessOrExit(error = otNetworkTimeSetXtalThreshold(mInstance, static_cast<uint16_t>(value)));
+        SuccessOrExit(error = ParseAsUint16(aArgs[0], period));
+        ;
+        SuccessOrExit(error = ParseAsUint16(aArgs[1], xtalThreshold));
+        SuccessOrExit(error = otNetworkTimeSetSyncPeriod(mInstance, period));
+        SuccessOrExit(error = otNetworkTimeSetXtalThreshold(mInstance, xtalThreshold));
     }
     else
     {
@@ -1859,167 +3082,159 @@ void Interpreter::ProcessNetworkTime(int argc, char *argv[])
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
-#endif // OPENTHREAD_CONFIG_ENABLE_TIME_SYNC
+#endif // OPENTHREAD_CONFIG_TIME_SYNC_ENABLE
 
-void Interpreter::ProcessPanId(int argc, char *argv[])
+otError Interpreter::ProcessPanId(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
-    long    value;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        mServer->OutputFormat("%04x\r\n", otLinkGetPanId(mInstance));
+        OutputLine("0x%04x", otLinkGetPanId(mInstance));
     }
     else
     {
-        SuccessOrExit(error = ParseLong(argv[0], value));
-        error = otLinkSetPanId(mInstance, static_cast<otPanId>(value));
+        uint16_t panId;
+
+        SuccessOrExit(error = ParseAsUint16(aArgs[0], panId));
+        error = otLinkSetPanId(mInstance, panId);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void Interpreter::ProcessParent(int argc, char *argv[])
+otError Interpreter::ProcessParent(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
     otError      error = OT_ERROR_NONE;
     otRouterInfo parentInfo;
 
     SuccessOrExit(error = otThreadGetParentInfo(mInstance, &parentInfo));
-    mServer->OutputFormat("Ext Addr: ");
-
-    for (size_t i = 0; i < sizeof(parentInfo.mExtAddress); i++)
-    {
-        mServer->OutputFormat("%02x", parentInfo.mExtAddress.m8[i]);
-    }
-
-    mServer->OutputFormat("\r\n");
-
-    mServer->OutputFormat("Rloc: %x\r\n", parentInfo.mRloc16);
-    mServer->OutputFormat("Link Quality In: %d\r\n", parentInfo.mLinkQualityIn);
-    mServer->OutputFormat("Link Quality Out: %d\r\n", parentInfo.mLinkQualityOut);
-    mServer->OutputFormat("Age: %d\r\n", parentInfo.mAge);
+    OutputFormat("Ext Addr: ");
+    OutputExtAddress(parentInfo.mExtAddress);
+    OutputLine("");
+    OutputLine("Rloc: %x", parentInfo.mRloc16);
+    OutputLine("Link Quality In: %d", parentInfo.mLinkQualityIn);
+    OutputLine("Link Quality Out: %d", parentInfo.mLinkQualityOut);
+    OutputLine("Age: %d", parentInfo.mAge);
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
 #if OPENTHREAD_FTD
-void Interpreter::ProcessParentPriority(int argc, char *argv[])
+otError Interpreter::ProcessParentPriority(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
-    long    value;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        mServer->OutputFormat("%d\r\n", otThreadGetParentPriority(mInstance));
+        OutputLine("%d", otThreadGetParentPriority(mInstance));
     }
     else
     {
-        SuccessOrExit(error = ParseLong(argv[0], value));
-        error = otThreadSetParentPriority(mInstance, static_cast<int8_t>(value));
+        int8_t priority;
+
+        SuccessOrExit(error = ParseAsInt8(aArgs[0], priority));
+        error = otThreadSetParentPriority(mInstance, priority);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 #endif
 
-#ifndef OTDLL
-void Interpreter::s_HandleIcmpReceive(void *               aContext,
-                                      otMessage *          aMessage,
-                                      const otMessageInfo *aMessageInfo,
-                                      const otIcmp6Header *aIcmpHeader)
+void Interpreter::HandleIcmpReceive(void *               aContext,
+                                    otMessage *          aMessage,
+                                    const otMessageInfo *aMessageInfo,
+                                    const otIcmp6Header *aIcmpHeader)
 {
-    static_cast<Interpreter *>(aContext)->HandleIcmpReceive(*static_cast<Message *>(aMessage),
-                                                            *static_cast<const Ip6::MessageInfo *>(aMessageInfo),
-                                                            *static_cast<const Ip6::IcmpHeader *>(aIcmpHeader));
+    static_cast<Interpreter *>(aContext)->HandleIcmpReceive(aMessage, aMessageInfo, aIcmpHeader);
 }
 
-void Interpreter::HandleIcmpReceive(Message &               aMessage,
-                                    const Ip6::MessageInfo &aMessageInfo,
-                                    const otIcmp6Header &   aIcmpHeader)
+void Interpreter::HandleIcmpReceive(otMessage *          aMessage,
+                                    const otMessageInfo *aMessageInfo,
+                                    const otIcmp6Header *aIcmpHeader)
 {
     uint32_t timestamp = 0;
+    uint16_t dataSize;
 
-    VerifyOrExit(aIcmpHeader.mType == OT_ICMP6_TYPE_ECHO_REPLY);
+    VerifyOrExit(aIcmpHeader->mType == OT_ICMP6_TYPE_ECHO_REPLY);
+    VerifyOrExit((mPingIdentifier != 0) && (mPingIdentifier == HostSwap16(aIcmpHeader->mData.m16[0])));
 
-    mServer->OutputFormat("%d bytes from ", aMessage.GetLength() - aMessage.GetOffset() + sizeof(otIcmp6Header));
+    dataSize = otMessageGetLength(aMessage) - otMessageGetOffset(aMessage);
+    OutputFormat("%u bytes from ", dataSize + static_cast<uint16_t>(sizeof(otIcmp6Header)));
 
-    mServer->OutputFormat(
-        "%x:%x:%x:%x:%x:%x:%x:%x", HostSwap16(aMessageInfo.GetPeerAddr().mFields.m16[0]),
-        HostSwap16(aMessageInfo.GetPeerAddr().mFields.m16[1]), HostSwap16(aMessageInfo.GetPeerAddr().mFields.m16[2]),
-        HostSwap16(aMessageInfo.GetPeerAddr().mFields.m16[3]), HostSwap16(aMessageInfo.GetPeerAddr().mFields.m16[4]),
-        HostSwap16(aMessageInfo.GetPeerAddr().mFields.m16[5]), HostSwap16(aMessageInfo.GetPeerAddr().mFields.m16[6]),
-        HostSwap16(aMessageInfo.GetPeerAddr().mFields.m16[7]));
-    mServer->OutputFormat(": icmp_seq=%d hlim=%d", HostSwap16(aIcmpHeader.mData.m16[1]), aMessageInfo.mHopLimit);
+    OutputIp6Address(aMessageInfo->mPeerAddr);
 
-    if (aMessage.Read(aMessage.GetOffset(), sizeof(uint32_t), &timestamp) >= static_cast<int>(sizeof(uint32_t)))
+    OutputFormat(": icmp_seq=%d hlim=%d", HostSwap16(aIcmpHeader->mData.m16[1]), aMessageInfo->mHopLimit);
+
+    if (otMessageRead(aMessage, otMessageGetOffset(aMessage), &timestamp, sizeof(uint32_t)) == sizeof(uint32_t))
     {
-        mServer->OutputFormat(" time=%dms", TimerMilli::GetNow() - HostSwap32(timestamp));
+        OutputFormat(" time=%dms", TimerMilli::GetNow().GetValue() - HostSwap32(timestamp));
     }
 
-    mServer->OutputFormat("\r\n");
+    OutputLine("");
+
+    SignalPingReply(static_cast<const Ip6::MessageInfo *>(aMessageInfo)->GetPeerAddr(), dataSize, HostSwap32(timestamp),
+                    aMessageInfo->mHopLimit);
 
 exit:
     return;
 }
 
-void Interpreter::ProcessPing(int argc, char *argv[])
+otError Interpreter::ProcessPing(uint8_t aArgsLength, char *aArgs[])
 {
     otError  error = OT_ERROR_NONE;
     uint8_t  index = 1;
-    long     value;
     uint32_t interval;
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
 
-    if (strcmp(argv[0], "stop") == 0)
+    if (strcmp(aArgs[0], "stop") == 0)
     {
-        if (!mPingTimer.IsRunning())
-        {
-            error = OT_ERROR_INVALID_STATE;
-        }
-        else
-        {
-            mPingTimer.Stop();
-        }
-
+        mPingIdentifier = 0;
+        VerifyOrExit(mPingTimer.IsRunning(), error = OT_ERROR_INVALID_STATE);
+        mPingTimer.Stop();
         ExitNow();
     }
 
     VerifyOrExit(!mPingTimer.IsRunning(), error = OT_ERROR_BUSY);
 
-    SuccessOrExit(error = mMessageInfo.GetPeerAddr().FromString(argv[0]));
-    mMessageInfo.mInterfaceId = OT_NETIF_INTERFACE_ID_THREAD;
+    SuccessOrExit(error = ParseAsIp6Address(aArgs[0], mPingDestAddress));
 
-    mLength   = 8;
-    mCount    = 1;
-    mInterval = 1000;
+    mPingLength            = kDefaultPingLength;
+    mPingCount             = kDefaultPingCount;
+    mPingInterval          = kDefaultPingInterval;
+    mPingHopLimit          = 0;
+    mPingAllowZeroHopLimit = false;
 
-    while (index < argc)
+    while (index < aArgsLength)
     {
         switch (index)
         {
         case 1:
-            SuccessOrExit(error = ParseLong(argv[index], value));
-            mLength = static_cast<uint16_t>(value);
+            SuccessOrExit(error = ParseAsUint16(aArgs[index], mPingLength));
             break;
 
         case 2:
-            SuccessOrExit(error = ParseLong(argv[index], value));
-            mCount = static_cast<uint16_t>(value);
+            SuccessOrExit(error = ParseAsUint16(aArgs[index], mPingCount));
             break;
 
         case 3:
-            SuccessOrExit(error = ParsePingInterval(argv[index], interval));
-            VerifyOrExit(0 < interval && interval <= Timer::kMaxDt, error = OT_ERROR_INVALID_ARGS);
-            mInterval = interval;
+            SuccessOrExit(error = ParsePingInterval(aArgs[index], interval));
+            VerifyOrExit(0 < interval && interval <= Timer::kMaxDelay, error = OT_ERROR_INVALID_ARGS);
+            mPingInterval = interval;
+            break;
+
+        case 4:
+            SuccessOrExit(error = ParseAsUint8(aArgs[index], mPingHopLimit));
+            mPingAllowZeroHopLimit = (mPingHopLimit == 0);
             break;
 
         default:
@@ -2029,93 +3244,97 @@ void Interpreter::ProcessPing(int argc, char *argv[])
         index++;
     }
 
-    HandlePingTimer();
+    mPingIdentifier++;
 
-    return;
+    if (mPingIdentifier == 0)
+    {
+        mPingIdentifier++;
+    }
 
-exit:
-    AppendResult(error);
-}
-
-void Interpreter::s_HandlePingTimer(Timer &aTimer)
-{
-    GetOwner(aTimer).HandlePingTimer();
-}
-
-void Interpreter::HandlePingTimer()
-{
-    otError  error     = OT_ERROR_NONE;
-    uint32_t timestamp = HostSwap32(TimerMilli::GetNow());
-
-    otMessage *          message;
-    const otMessageInfo *messageInfo = static_cast<const otMessageInfo *>(&mMessageInfo);
-
-    VerifyOrExit((message = otIp6NewMessage(mInstance, NULL)) != NULL, error = OT_ERROR_NO_BUFS);
-    SuccessOrExit(error = otMessageAppend(message, &timestamp, sizeof(timestamp)));
-    SuccessOrExit(error = otMessageSetLength(message, mLength));
-    SuccessOrExit(error = otIcmp6SendEchoRequest(mInstance, message, messageInfo, 1));
-
-    mCount--;
+    SendPing();
 
 exit:
+    return error;
+}
 
-    if (error != OT_ERROR_NONE && message != NULL)
+void Interpreter::HandlePingTimer(Timer &aTimer)
+{
+    GetOwner(aTimer).SendPing();
+}
+
+void Interpreter::SendPing(void)
+{
+    uint32_t      timestamp = HostSwap32(TimerMilli::GetNow().GetValue());
+    otMessage *   message   = nullptr;
+    otMessageInfo messageInfo;
+
+    memset(&messageInfo, 0, sizeof(messageInfo));
+    messageInfo.mPeerAddr          = mPingDestAddress;
+    messageInfo.mHopLimit          = mPingHopLimit;
+    messageInfo.mAllowZeroHopLimit = mPingAllowZeroHopLimit;
+
+    message = otIp6NewMessage(mInstance, nullptr);
+    VerifyOrExit(message != nullptr);
+
+    SuccessOrExit(otMessageAppend(message, &timestamp, sizeof(timestamp)));
+    SuccessOrExit(otMessageSetLength(message, mPingLength));
+    SuccessOrExit(otIcmp6SendEchoRequest(mInstance, message, &messageInfo, mPingIdentifier));
+
+    SignalPingRequest(static_cast<Ip6::MessageInfo *>(&messageInfo)->GetPeerAddr(), mPingLength, HostSwap32(timestamp),
+                      messageInfo.mHopLimit);
+
+    message = nullptr;
+
+exit:
+    if (message != nullptr)
     {
         otMessageFree(message);
     }
 
-    if (mCount)
+    if (--mPingCount)
     {
-        mPingTimer.Start(mInterval);
+        mPingTimer.Start(mPingInterval);
     }
 }
-#endif
 
-void Interpreter::ProcessPollPeriod(int argc, char *argv[])
+otError Interpreter::ProcessPollPeriod(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
-    long    value;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        mServer->OutputFormat("%d\r\n", otLinkGetPollPeriod(mInstance));
+        OutputLine("%d", otLinkGetPollPeriod(mInstance));
     }
     else
     {
-        SuccessOrExit(error = ParseLong(argv[0], value));
-        error = otLinkSetPollPeriod(mInstance, static_cast<uint32_t>(value));
+        uint32_t pollPeriod;
+
+        SuccessOrExit(error = ParseAsUint32(aArgs[0], pollPeriod));
+        error = otLinkSetPollPeriod(mInstance, pollPeriod);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-#ifndef OTDLL
-void Interpreter::ProcessPromiscuous(int argc, char *argv[])
+otError Interpreter::ProcessPromiscuous(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        if (otLinkIsPromiscuous(mInstance) && otPlatRadioGetPromiscuous(mInstance))
-        {
-            mServer->OutputFormat("Enabled\r\n");
-        }
-        else
-        {
-            mServer->OutputFormat("Disabled\r\n");
-        }
+        OutputEnabledDisabledStatus(otLinkIsPromiscuous(mInstance) && otPlatRadioGetPromiscuous(mInstance));
     }
     else
     {
-        if (strcmp(argv[0], "enable") == 0)
+        if (strcmp(aArgs[0], "enable") == 0)
         {
-            otLinkSetPcapCallback(mInstance, &s_HandleLinkPcapReceive, this);
             SuccessOrExit(error = otLinkSetPromiscuous(mInstance, true));
+            otLinkSetPcapCallback(mInstance, &HandleLinkPcapReceive, this);
         }
-        else if (strcmp(argv[0], "disable") == 0)
+        else if (strcmp(aArgs[0], "disable") == 0)
         {
-            otLinkSetPcapCallback(mInstance, NULL, NULL);
+            otLinkSetPcapCallback(mInstance, nullptr, nullptr);
             SuccessOrExit(error = otLinkSetPromiscuous(mInstance, false));
         }
         else
@@ -2125,10 +3344,10 @@ void Interpreter::ProcessPromiscuous(int argc, char *argv[])
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void Interpreter::s_HandleLinkPcapReceive(const otRadioFrame *aFrame, bool aIsTx, void *aContext)
+void Interpreter::HandleLinkPcapReceive(const otRadioFrame *aFrame, bool aIsTx, void *aContext)
 {
     static_cast<Interpreter *>(aContext)->HandleLinkPcapReceive(aFrame, aIsTx);
 }
@@ -2137,39 +3356,39 @@ void Interpreter::HandleLinkPcapReceive(const otRadioFrame *aFrame, bool aIsTx)
 {
     OT_UNUSED_VARIABLE(aIsTx);
 
-    mServer->OutputFormat("\r\n");
+    OutputLine("");
 
     for (size_t i = 0; i < 44; i++)
     {
-        mServer->OutputFormat("=");
+        OutputFormat("=");
     }
 
-    mServer->OutputFormat("[len = %3u]", aFrame->mLength);
+    OutputFormat("[len = %3u]", aFrame->mLength);
 
     for (size_t i = 0; i < 28; i++)
     {
-        mServer->OutputFormat("=");
+        OutputFormat("=");
     }
 
-    mServer->OutputFormat("\r\n");
+    OutputLine("");
 
     for (size_t i = 0; i < aFrame->mLength; i += 16)
     {
-        mServer->OutputFormat("|");
+        OutputFormat("|");
 
         for (size_t j = 0; j < 16; j++)
         {
             if (i + j < aFrame->mLength)
             {
-                mServer->OutputFormat(" %02X", aFrame->mPsdu[i + j]);
+                OutputFormat(" %02X", aFrame->mPsdu[i + j]);
             }
             else
             {
-                mServer->OutputFormat(" ..");
+                OutputFormat(" ..");
             }
         }
 
-        mServer->OutputFormat("|");
+        OutputFormat("|");
 
         for (size_t j = 0; j < 16; j++)
         {
@@ -2177,80 +3396,61 @@ void Interpreter::HandleLinkPcapReceive(const otRadioFrame *aFrame, bool aIsTx)
             {
                 if (31 < aFrame->mPsdu[i + j] && aFrame->mPsdu[i + j] < 127)
                 {
-                    mServer->OutputFormat(" %c", aFrame->mPsdu[i + j]);
+                    OutputFormat(" %c", aFrame->mPsdu[i + j]);
                 }
                 else
                 {
-                    mServer->OutputFormat(" ?");
+                    OutputFormat(" ?");
                 }
             }
             else
             {
-                mServer->OutputFormat(" .");
+                OutputFormat(" .");
             }
         }
 
-        mServer->OutputFormat("|\r\n");
+        OutputLine("|");
     }
 
     for (size_t i = 0; i < 83; i++)
     {
-        mServer->OutputFormat("-");
+        OutputFormat("-");
     }
 
-    mServer->OutputFormat("\r\n");
+    OutputLine("");
 }
-#endif
 
-#if OPENTHREAD_ENABLE_BORDER_ROUTER
-otError Interpreter::ProcessPrefixAdd(int argc, char *argv[])
+#if OPENTHREAD_CONFIG_BORDER_ROUTER_ENABLE
+otError Interpreter::ProcessPrefixAdd(uint8_t aArgsLength, char *aArgs[])
 {
     otError              error = OT_ERROR_NONE;
     otBorderRouterConfig config;
-    int                  argcur = 0;
+    uint8_t              argcur = 0;
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
 
     memset(&config, 0, sizeof(otBorderRouterConfig));
 
-    char *prefixLengthStr;
-    char *endptr;
-
-    if ((prefixLengthStr = strchr(argv[argcur], '/')) == NULL)
-    {
-        ExitNow();
-    }
-
-    *prefixLengthStr++ = '\0';
-
-    SuccessOrExit(error = otIp6AddressFromString(argv[argcur], &config.mPrefix.mPrefix));
-
-    config.mPrefix.mLength = static_cast<uint8_t>(strtol(prefixLengthStr, &endptr, 0));
-
-    if (*endptr != '\0')
-    {
-        ExitNow(error = OT_ERROR_PARSE);
-    }
-
+    SuccessOrExit(error = ParseAsIp6Prefix(aArgs[argcur], config.mPrefix));
     argcur++;
 
-    for (; argcur < argc; argcur++)
+    for (; argcur < aArgsLength; argcur++)
     {
-        if (strcmp(argv[argcur], "high") == 0)
+        if (strcmp(aArgs[argcur], "high") == 0)
         {
             config.mPreference = OT_ROUTE_PREFERENCE_HIGH;
         }
-        else if (strcmp(argv[argcur], "med") == 0)
+        else if (strcmp(aArgs[argcur], "med") == 0)
         {
             config.mPreference = OT_ROUTE_PREFERENCE_MED;
         }
-        else if (strcmp(argv[argcur], "low") == 0)
+        else if (strcmp(aArgs[argcur], "low") == 0)
         {
             config.mPreference = OT_ROUTE_PREFERENCE_LOW;
         }
         else
         {
-            for (char *arg = argv[argcur]; *arg != '\0'; arg++)
+            for (char *arg = aArgs[argcur]; *arg != '\0'; arg++)
             {
                 switch (*arg)
                 {
@@ -2282,8 +3482,17 @@ otError Interpreter::ProcessPrefixAdd(int argc, char *argv[])
                     config.mStable = true;
                     break;
 
+                case 'n':
+                    config.mNdDns = true;
+                    break;
+
+#if OPENTHREAD_FTD && OPENTHREAD_CONFIG_BACKBONE_ROUTER_ENABLE
+                case 'D':
+                    config.mDp = true;
+                    break;
+#endif
                 default:
-                    ExitNow(error = OT_ERROR_PARSE);
+                    ExitNow(error = OT_ERROR_INVALID_ARGS);
                 }
             }
         }
@@ -2295,36 +3504,14 @@ exit:
     return error;
 }
 
-otError Interpreter::ProcessPrefixRemove(int argc, char *argv[])
+otError Interpreter::ProcessPrefixRemove(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
+    otError     error = OT_ERROR_NONE;
+    otIp6Prefix prefix;
 
-    otError            error = OT_ERROR_NONE;
-    struct otIp6Prefix prefix;
-    int                argcur = 0;
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
-
-    memset(&prefix, 0, sizeof(otIp6Prefix));
-
-    char *prefixLengthStr;
-    char *endptr;
-
-    if ((prefixLengthStr = strchr(argv[argcur], '/')) == NULL)
-    {
-        ExitNow();
-    }
-
-    *prefixLengthStr++ = '\0';
-
-    SuccessOrExit(error = otIp6AddressFromString(argv[argcur], &prefix.mPrefix));
-
-    prefix.mLength = static_cast<uint8_t>(strtol(prefixLengthStr, &endptr, 0));
-
-    if (*endptr != '\0')
-    {
-        ExitNow(error = OT_ERROR_PARSE);
-    }
+    SuccessOrExit(error = ParseAsIp6Prefix(aArgs[0], prefix));
 
     error = otBorderRouterRemoveOnMeshPrefix(mInstance, &prefix);
 
@@ -2339,80 +3526,75 @@ otError Interpreter::ProcessPrefixList(void)
 
     while (otBorderRouterGetNextOnMeshPrefix(mInstance, &iterator, &config) == OT_ERROR_NONE)
     {
-        mServer->OutputFormat("%x:%x:%x:%x::/%d ", HostSwap16(config.mPrefix.mPrefix.mFields.m16[0]),
-                              HostSwap16(config.mPrefix.mPrefix.mFields.m16[1]),
-                              HostSwap16(config.mPrefix.mPrefix.mFields.m16[2]),
-                              HostSwap16(config.mPrefix.mPrefix.mFields.m16[3]), config.mPrefix.mLength);
-
-        if (config.mPreferred)
-        {
-            mServer->OutputFormat("p");
-        }
-
-        if (config.mSlaac)
-        {
-            mServer->OutputFormat("a");
-        }
-
-        if (config.mDhcp)
-        {
-            mServer->OutputFormat("d");
-        }
-
-        if (config.mConfigure)
-        {
-            mServer->OutputFormat("c");
-        }
-
-        if (config.mDefaultRoute)
-        {
-            mServer->OutputFormat("r");
-        }
-
-        if (config.mOnMesh)
-        {
-            mServer->OutputFormat("o");
-        }
-
-        if (config.mStable)
-        {
-            mServer->OutputFormat("s");
-        }
-
-        switch (config.mPreference)
-        {
-        case OT_ROUTE_PREFERENCE_LOW:
-            mServer->OutputFormat(" low\r\n");
-            break;
-
-        case OT_ROUTE_PREFERENCE_MED:
-            mServer->OutputFormat(" med\r\n");
-            break;
-
-        case OT_ROUTE_PREFERENCE_HIGH:
-            mServer->OutputFormat(" high\r\n");
-            break;
-        }
+        mNetworkData.OutputPrefix(config);
     }
+
+#if OPENTHREAD_FTD && OPENTHREAD_CONFIG_BACKBONE_ROUTER_ENABLE
+    if (otBackboneRouterGetState(mInstance) == OT_BACKBONE_ROUTER_STATE_DISABLED)
+    {
+        SuccessOrExit(otBackboneRouterGetDomainPrefix(mInstance, &config));
+        OutputFormat("- ");
+        mNetworkData.OutputPrefix(config);
+    }
+    // Else already printed via above while loop.
+exit:
+#endif
 
     return OT_ERROR_NONE;
 }
 
-void Interpreter::ProcessPrefix(int argc, char *argv[])
+otError Interpreter::ProcessPrefix(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
         SuccessOrExit(error = ProcessPrefixList());
     }
-    else if (strcmp(argv[0], "add") == 0)
+    else if (strcmp(aArgs[0], "add") == 0)
     {
-        SuccessOrExit(error = ProcessPrefixAdd(argc - 1, argv + 1));
+        SuccessOrExit(error = ProcessPrefixAdd(aArgsLength - 1, aArgs + 1));
     }
-    else if (strcmp(argv[0], "remove") == 0)
+    else if (strcmp(aArgs[0], "remove") == 0)
     {
-        SuccessOrExit(error = ProcessPrefixRemove(argc - 1, argv + 1));
+        SuccessOrExit(error = ProcessPrefixRemove(aArgsLength - 1, aArgs + 1));
+    }
+    else
+    {
+        ExitNow(error = OT_ERROR_INVALID_COMMAND);
+    }
+
+exit:
+    return error;
+}
+#endif // OPENTHREAD_CONFIG_BORDER_ROUTER_ENABLE
+
+#if OPENTHREAD_FTD
+otError Interpreter::ProcessPreferRouterId(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+    uint8_t routerId;
+
+    VerifyOrExit(aArgsLength == 1, error = OT_ERROR_INVALID_ARGS);
+    SuccessOrExit(error = ParseAsUint8(aArgs[0], routerId));
+    error = otThreadSetPreferredRouterId(mInstance, routerId);
+
+exit:
+    return error;
+}
+#endif
+
+otError Interpreter::ProcessRcp(uint8_t aArgsLength, char *aArgs[])
+{
+    otError     error   = OT_ERROR_NONE;
+    const char *version = otPlatRadioGetVersionString(mInstance);
+
+    VerifyOrExit(version != otGetVersionString(), error = OT_ERROR_NOT_IMPLEMENTED);
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
+
+    if (strcmp(aArgs[0], "version") == 0)
+    {
+        OutputLine("%s", version);
     }
     else
     {
@@ -2420,96 +3602,103 @@ void Interpreter::ProcessPrefix(int argc, char *argv[])
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
-#endif // OPENTHREAD_ENABLE_BORDER_ROUTER
 
-#if OPENTHREAD_FTD
-void Interpreter::ProcessReleaseRouterId(int argc, char *argv[])
+otError Interpreter::ProcessRegion(uint8_t aArgsLength, char *aArgs[])
 {
-    otError error = OT_ERROR_NONE;
-    long    value;
+    otError  error = OT_ERROR_NONE;
+    uint16_t regionCode;
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
+    if (aArgsLength == 0)
+    {
+        SuccessOrExit(error = otPlatRadioGetRegion(mInstance, &regionCode));
+        OutputLine("%c%c", regionCode >> 8, regionCode & 0xff);
+    }
+    else
+    {
+        VerifyOrExit(strlen(aArgs[0]) == 2, error = OT_ERROR_INVALID_ARGS);
 
-    SuccessOrExit(error = ParseLong(argv[0], value));
-    SuccessOrExit(error = otThreadReleaseRouterId(mInstance, static_cast<uint8_t>(value)));
+        regionCode =
+            static_cast<uint16_t>(static_cast<uint16_t>(aArgs[0][0]) << 8) + static_cast<uint16_t>(aArgs[0][1]);
+        error = otPlatRadioSetRegion(mInstance, regionCode);
+    }
 
 exit:
-    AppendResult(error);
+    return error;
 }
-#endif // OPENTHREAD_FTD
 
-void Interpreter::ProcessReset(int argc, char *argv[])
+#if OPENTHREAD_FTD
+otError Interpreter::ProcessReleaseRouterId(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
+    otError error = OT_ERROR_NONE;
+    uint8_t routerId;
+
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
+
+    SuccessOrExit(error = ParseAsUint8(aArgs[0], routerId));
+    SuccessOrExit(error = otThreadReleaseRouterId(mInstance, routerId));
+
+exit:
+    return error;
+}
+#endif
+
+otError Interpreter::ProcessReset(uint8_t aArgsLength, char *aArgs[])
+{
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
     otInstanceReset(mInstance);
+
+    return OT_ERROR_NONE;
 }
 
-void Interpreter::ProcessRloc16(int argc, char *argv[])
+otError Interpreter::ProcessRloc16(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
-    mServer->OutputFormat("%04x\r\n", otThreadGetRloc16(mInstance));
-    mServer->OutputFormat("Done\r\n");
+    OutputLine("%04x", otThreadGetRloc16(mInstance));
+
+    return OT_ERROR_NONE;
 }
 
-#if OPENTHREAD_ENABLE_BORDER_ROUTER
-otError Interpreter::ProcessRouteAdd(int argc, char *argv[])
+#if OPENTHREAD_CONFIG_BORDER_ROUTER_ENABLE
+otError Interpreter::ProcessRouteAdd(uint8_t aArgsLength, char *aArgs[])
 {
     otError               error = OT_ERROR_NONE;
     otExternalRouteConfig config;
-    int                   argcur = 0;
+    uint8_t               argcur = 0;
 
     memset(&config, 0, sizeof(otExternalRouteConfig));
 
-    char *prefixLengthStr;
-    char *endptr;
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
-
-    if ((prefixLengthStr = strchr(argv[argcur], '/')) == NULL)
-    {
-        ExitNow();
-    }
-
-    *prefixLengthStr++ = '\0';
-
-    SuccessOrExit(error = otIp6AddressFromString(argv[argcur], &config.mPrefix.mPrefix));
-
-    config.mPrefix.mLength = static_cast<uint8_t>(strtol(prefixLengthStr, &endptr, 0));
-
-    if (*endptr != '\0')
-    {
-        ExitNow(error = OT_ERROR_PARSE);
-    }
-
+    SuccessOrExit(error = ParseAsIp6Prefix(aArgs[argcur], config.mPrefix));
     argcur++;
 
-    for (; argcur < argc; argcur++)
+    for (; argcur < aArgsLength; argcur++)
     {
-        if (strcmp(argv[argcur], "s") == 0)
+        if (strcmp(aArgs[argcur], "s") == 0)
         {
             config.mStable = true;
         }
-        else if (strcmp(argv[argcur], "high") == 0)
+        else if (strcmp(aArgs[argcur], "high") == 0)
         {
             config.mPreference = OT_ROUTE_PREFERENCE_HIGH;
         }
-        else if (strcmp(argv[argcur], "med") == 0)
+        else if (strcmp(aArgs[argcur], "med") == 0)
         {
             config.mPreference = OT_ROUTE_PREFERENCE_MED;
         }
-        else if (strcmp(argv[argcur], "low") == 0)
+        else if (strcmp(aArgs[argcur], "low") == 0)
         {
             config.mPreference = OT_ROUTE_PREFERENCE_LOW;
         }
         else
         {
-            ExitNow(error = OT_ERROR_PARSE);
+            ExitNow(error = OT_ERROR_INVALID_ARGS);
         }
     }
 
@@ -2519,33 +3708,14 @@ exit:
     return error;
 }
 
-otError Interpreter::ProcessRouteRemove(int argc, char *argv[])
+otError Interpreter::ProcessRouteRemove(uint8_t aArgsLength, char *aArgs[])
 {
-    otError            error = OT_ERROR_NONE;
-    struct otIp6Prefix prefix;
-    int                argcur = 0;
+    otError     error = OT_ERROR_NONE;
+    otIp6Prefix prefix;
 
-    memset(&prefix, 0, sizeof(struct otIp6Prefix));
-    char *prefixLengthStr;
-    char *endptr;
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
-
-    if ((prefixLengthStr = strchr(argv[argcur], '/')) == NULL)
-    {
-        ExitNow();
-    }
-
-    *prefixLengthStr++ = '\0';
-
-    SuccessOrExit(error = otIp6AddressFromString(argv[argcur], &prefix.mPrefix));
-
-    prefix.mLength = static_cast<uint8_t>(strtol(prefixLengthStr, &endptr, 0));
-
-    if (*endptr != '\0')
-    {
-        ExitNow(error = OT_ERROR_PARSE);
-    }
+    SuccessOrExit(error = ParseAsIp6Prefix(aArgs[0], prefix));
 
     error = otBorderRouterRemoveRoute(mInstance, &prefix);
 
@@ -2560,83 +3730,58 @@ otError Interpreter::ProcessRouteList(void)
 
     while (otBorderRouterGetNextRoute(mInstance, &iterator, &config) == OT_ERROR_NONE)
     {
-        mServer->OutputFormat("%x:%x:%x:%x::/%d ", HostSwap16(config.mPrefix.mPrefix.mFields.m16[0]),
-                              HostSwap16(config.mPrefix.mPrefix.mFields.m16[1]),
-                              HostSwap16(config.mPrefix.mPrefix.mFields.m16[2]),
-                              HostSwap16(config.mPrefix.mPrefix.mFields.m16[3]), config.mPrefix.mLength);
-
-        if (config.mStable)
-        {
-            mServer->OutputFormat("s");
-        }
-
-        switch (config.mPreference)
-        {
-        case OT_ROUTE_PREFERENCE_LOW:
-            mServer->OutputFormat(" low\r\n");
-            break;
-
-        case OT_ROUTE_PREFERENCE_MED:
-            mServer->OutputFormat(" med\r\n");
-            break;
-
-        case OT_ROUTE_PREFERENCE_HIGH:
-            mServer->OutputFormat(" high\r\n");
-            break;
-        }
+        mNetworkData.OutputRoute(config);
     }
 
     return OT_ERROR_NONE;
 }
 
-void Interpreter::ProcessRoute(int argc, char *argv[])
+otError Interpreter::ProcessRoute(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
         SuccessOrExit(error = ProcessRouteList());
     }
-    else if (strcmp(argv[0], "add") == 0)
+    else if (strcmp(aArgs[0], "add") == 0)
     {
-        SuccessOrExit(error = ProcessRouteAdd(argc - 1, argv + 1));
+        SuccessOrExit(error = ProcessRouteAdd(aArgsLength - 1, aArgs + 1));
     }
-    else if (strcmp(argv[0], "remove") == 0)
+    else if (strcmp(aArgs[0], "remove") == 0)
     {
-        SuccessOrExit(error = ProcessRouteRemove(argc - 1, argv + 1));
+        SuccessOrExit(error = ProcessRouteRemove(aArgsLength - 1, aArgs + 1));
     }
     else
     {
-        ExitNow(error = OT_ERROR_INVALID_ARGS);
+        ExitNow(error = OT_ERROR_INVALID_COMMAND);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
-#endif // OPENTHREAD_ENABLE_BORDER_ROUTER
+#endif // OPENTHREAD_CONFIG_BORDER_ROUTER_ENABLE
 
 #if OPENTHREAD_FTD
-void Interpreter::ProcessRouter(int argc, char *argv[])
+otError Interpreter::ProcessRouter(uint8_t aArgsLength, char *aArgs[])
 {
     otError      error = OT_ERROR_NONE;
     otRouterInfo routerInfo;
-    long         value;
+    uint16_t     routerId;
     bool         isTable;
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
 
-    isTable = (strcmp(argv[0], "table") == 0);
+    isTable = (strcmp(aArgs[0], "table") == 0);
 
-    if (isTable || strcmp(argv[0], "list") == 0)
+    if (isTable || strcmp(aArgs[0], "list") == 0)
     {
         uint8_t maxRouterId;
 
         if (isTable)
         {
-            mServer->OutputFormat(
-                "| ID | RLOC16 | Next Hop | Path Cost | LQ In | LQ Out | Age | Extended MAC     |\r\n");
-            mServer->OutputFormat(
-                "+----+--------+----------+-----------+-------+--------+-----+------------------+\r\n");
+            OutputLine("| ID | RLOC16 | Next Hop | Path Cost | LQ In | LQ Out | Age | Extended MAC     | Link |");
+            OutputLine("+----+--------+----------+-----------+-------+--------+-----+------------------+------+");
         }
 
         maxRouterId = otThreadGetMaxRouterId(mInstance);
@@ -2650,106 +3795,90 @@ void Interpreter::ProcessRouter(int argc, char *argv[])
 
             if (isTable)
             {
-                mServer->OutputFormat("| %2d ", routerInfo.mRouterId);
-                mServer->OutputFormat("| 0x%04x ", routerInfo.mRloc16);
-                mServer->OutputFormat("| %8d ", routerInfo.mNextHop);
-                mServer->OutputFormat("| %9d ", routerInfo.mPathCost);
-                mServer->OutputFormat("| %5d ", routerInfo.mLinkQualityIn);
-                mServer->OutputFormat("| %6d ", routerInfo.mLinkQualityOut);
-                mServer->OutputFormat("| %3d ", routerInfo.mAge);
-                mServer->OutputFormat("| ");
-
-                for (size_t j = 0; j < sizeof(routerInfo.mExtAddress); j++)
-                {
-                    mServer->OutputFormat("%02x", routerInfo.mExtAddress.m8[j]);
-                }
-
-                mServer->OutputFormat(" |\r\n");
+                OutputFormat("| %2d ", routerInfo.mRouterId);
+                OutputFormat("| 0x%04x ", routerInfo.mRloc16);
+                OutputFormat("| %8d ", routerInfo.mNextHop);
+                OutputFormat("| %9d ", routerInfo.mPathCost);
+                OutputFormat("| %5d ", routerInfo.mLinkQualityIn);
+                OutputFormat("| %6d ", routerInfo.mLinkQualityOut);
+                OutputFormat("| %3d ", routerInfo.mAge);
+                OutputFormat("| ");
+                OutputExtAddress(routerInfo.mExtAddress);
+                OutputLine(" | %4d |", routerInfo.mLinkEstablished);
             }
             else
             {
-                mServer->OutputFormat("%d ", i);
+                OutputFormat("%d ", i);
             }
         }
 
-        mServer->OutputFormat("\r\n");
+        OutputLine("");
         ExitNow();
     }
 
-    SuccessOrExit(error = ParseLong(argv[0], value));
-    SuccessOrExit(error = otThreadGetRouterInfo(mInstance, static_cast<uint16_t>(value), &routerInfo));
+    SuccessOrExit(error = ParseAsUint16(aArgs[0], routerId));
+    SuccessOrExit(error = otThreadGetRouterInfo(mInstance, routerId, &routerInfo));
 
-    mServer->OutputFormat("Alloc: %d\r\n", routerInfo.mAllocated);
+    OutputLine("Alloc: %d", routerInfo.mAllocated);
 
     if (routerInfo.mAllocated)
     {
-        mServer->OutputFormat("Router ID: %d\r\n", routerInfo.mRouterId);
-        mServer->OutputFormat("Rloc: %04x\r\n", routerInfo.mRloc16);
-        mServer->OutputFormat("Next Hop: %04x\r\n", static_cast<uint16_t>(routerInfo.mNextHop) << 10);
-        mServer->OutputFormat("Link: %d\r\n", routerInfo.mLinkEstablished);
+        OutputLine("Router ID: %d", routerInfo.mRouterId);
+        OutputLine("Rloc: %04x", routerInfo.mRloc16);
+        OutputLine("Next Hop: %04x", static_cast<uint16_t>(routerInfo.mNextHop) << 10);
+        OutputLine("Link: %d", routerInfo.mLinkEstablished);
 
         if (routerInfo.mLinkEstablished)
         {
-            mServer->OutputFormat("Ext Addr: ");
-
-            for (size_t j = 0; j < sizeof(routerInfo.mExtAddress); j++)
-            {
-                mServer->OutputFormat("%02x", routerInfo.mExtAddress.m8[j]);
-            }
-
-            mServer->OutputFormat("\r\n");
-            mServer->OutputFormat("Cost: %d\r\n", routerInfo.mPathCost);
-            mServer->OutputFormat("Link Quality In: %d\r\n", routerInfo.mLinkQualityIn);
-            mServer->OutputFormat("Link Quality Out: %d\r\n", routerInfo.mLinkQualityOut);
-            mServer->OutputFormat("Age: %d\r\n", routerInfo.mAge);
+            OutputFormat("Ext Addr: ");
+            OutputExtAddress(routerInfo.mExtAddress);
+            OutputLine("");
+            OutputLine("Cost: %d", routerInfo.mPathCost);
+            OutputLine("Link Quality In: %d", routerInfo.mLinkQualityIn);
+            OutputLine("Link Quality Out: %d", routerInfo.mLinkQualityOut);
+            OutputLine("Age: %d", routerInfo.mAge);
         }
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void Interpreter::ProcessRouterDowngradeThreshold(int argc, char *argv[])
+otError Interpreter::ProcessRouterDowngradeThreshold(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
-    long    value;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        mServer->OutputFormat("%d\r\n", otThreadGetRouterDowngradeThreshold(mInstance));
+        OutputLine("%d", otThreadGetRouterDowngradeThreshold(mInstance));
     }
     else
     {
-        SuccessOrExit(error = ParseLong(argv[0], value));
-        otThreadSetRouterDowngradeThreshold(mInstance, static_cast<uint8_t>(value));
+        uint8_t threshold;
+
+        SuccessOrExit(error = ParseAsUint8(aArgs[0], threshold));
+        otThreadSetRouterDowngradeThreshold(mInstance, threshold);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void Interpreter::ProcessRouterRole(int argc, char *argv[])
+otError Interpreter::ProcessRouterEligible(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        if (otThreadIsRouterRoleEnabled(mInstance))
-        {
-            mServer->OutputFormat("Enabled\r\n");
-        }
-        else
-        {
-            mServer->OutputFormat("Disabled\r\n");
-        }
+        OutputEnabledDisabledStatus(otThreadIsRouterEligible(mInstance));
     }
-    else if (strcmp(argv[0], "enable") == 0)
+    else if (strcmp(aArgs[0], "enable") == 0)
     {
-        otThreadSetRouterRoleEnabled(mInstance, true);
+        error = otThreadSetRouterEligible(mInstance, true);
     }
-    else if (strcmp(argv[0], "disable") == 0)
+    else if (strcmp(aArgs[0], "disable") == 0)
     {
-        otThreadSetRouterRoleEnabled(mInstance, false);
+        error = otThreadSetRouterEligible(mInstance, false);
     }
     else
     {
@@ -2757,189 +3886,186 @@ void Interpreter::ProcessRouterRole(int argc, char *argv[])
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void Interpreter::ProcessRouterSelectionJitter(int argc, char *argv[])
+otError Interpreter::ProcessRouterSelectionJitter(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
-    long    value;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        mServer->OutputFormat("%d\r\n", otThreadGetRouterSelectionJitter(mInstance));
+        OutputLine("%d", otThreadGetRouterSelectionJitter(mInstance));
     }
     else
     {
-        SuccessOrExit(error = ParseLong(argv[0], value));
-        VerifyOrExit(0 < value && value < 256, error = OT_ERROR_INVALID_ARGS);
-        otThreadSetRouterSelectionJitter(mInstance, static_cast<uint8_t>(value));
+        uint8_t jitter;
+
+        SuccessOrExit(error = ParseAsUint8(aArgs[0], jitter));
+        otThreadSetRouterSelectionJitter(mInstance, jitter);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void Interpreter::ProcessRouterUpgradeThreshold(int argc, char *argv[])
+otError Interpreter::ProcessRouterUpgradeThreshold(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
-    long    value;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        mServer->OutputFormat("%d\r\n", otThreadGetRouterUpgradeThreshold(mInstance));
+        OutputLine("%d", otThreadGetRouterUpgradeThreshold(mInstance));
     }
     else
     {
-        SuccessOrExit(error = ParseLong(argv[0], value));
-        otThreadSetRouterUpgradeThreshold(mInstance, static_cast<uint8_t>(value));
+        uint8_t threshold;
+
+        SuccessOrExit(error = ParseAsUint8(aArgs[0], threshold));
+        otThreadSetRouterUpgradeThreshold(mInstance, threshold);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 #endif // OPENTHREAD_FTD
 
-void Interpreter::ProcessScan(int argc, char *argv[])
+otError Interpreter::ProcessScan(uint8_t aArgsLength, char *aArgs[])
 {
     otError  error        = OT_ERROR_NONE;
     uint32_t scanChannels = 0;
     uint16_t scanDuration = 0;
     bool     energyScan   = false;
-    long     value;
+    uint8_t  index        = 0;
 
-    if (argc > 0)
+    if (aArgsLength > 0)
     {
-        if (strcmp(argv[0], "energy") == 0)
+        if (strcmp(aArgs[index], "energy") == 0)
         {
             energyScan = true;
+            index++;
 
-            if (argc > 1)
+            if (aArgsLength > 1)
             {
-                SuccessOrExit(error = ParseLong(argv[1], value));
-                scanDuration = static_cast<uint16_t>(value);
+                SuccessOrExit(error = ParseAsUint16(aArgs[index++], scanDuration));
             }
         }
-        else
+
+        if (index < aArgsLength)
         {
-            SuccessOrExit(error = ParseLong(argv[0], value));
-            VerifyOrExit((0 <= value) && (value < static_cast<long>(sizeof(scanChannels) * CHAR_BIT)),
-                         error = OT_ERROR_INVALID_ARGS);
-            scanChannels = 1 << value;
+            uint8_t channel;
+
+            SuccessOrExit(error = ParseAsUint8(aArgs[index++], channel));
+            VerifyOrExit(channel < sizeof(scanChannels) * CHAR_BIT, error = OT_ERROR_INVALID_ARGS);
+            scanChannels = 1 << channel;
         }
     }
 
     if (energyScan)
     {
-        mServer->OutputFormat("| Ch | RSSI |\r\n");
-        mServer->OutputFormat("+----+------+\r\n");
+        OutputLine("| Ch | RSSI |");
+        OutputLine("+----+------+");
         SuccessOrExit(error = otLinkEnergyScan(mInstance, scanChannels, scanDuration,
-                                               &Interpreter::s_HandleEnergyScanResult, this));
+                                               &Interpreter::HandleEnergyScanResult, this));
     }
     else
     {
-        mServer->OutputFormat(
-            "| J | Network Name     | Extended PAN     | PAN  | MAC Address      | Ch | dBm | LQI |\r\n");
-        mServer->OutputFormat(
-            "+---+------------------+------------------+------+------------------+----+-----+-----+\r\n");
+        OutputLine("| J | Network Name     | Extended PAN     | PAN  | MAC Address      | Ch | dBm | LQI |");
+        OutputLine("+---+------------------+------------------+------+------------------+----+-----+-----+");
         SuccessOrExit(error = otLinkActiveScan(mInstance, scanChannels, scanDuration,
-                                               &Interpreter::s_HandleActiveScanResult, this));
+                                               &Interpreter::HandleActiveScanResult, this));
     }
 
-    return;
+    error = OT_ERROR_PENDING;
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void OTCALL Interpreter::s_HandleActiveScanResult(otActiveScanResult *aResult, void *aContext)
+void Interpreter::HandleActiveScanResult(otActiveScanResult *aResult, void *aContext)
 {
     static_cast<Interpreter *>(aContext)->HandleActiveScanResult(aResult);
 }
 
 void Interpreter::HandleActiveScanResult(otActiveScanResult *aResult)
 {
-    if (aResult == NULL)
+    if (aResult == nullptr)
     {
-        mServer->OutputFormat("Done\r\n");
+        OutputResult(OT_ERROR_NONE);
         ExitNow();
     }
 
-    mServer->OutputFormat("| %d ", aResult->mIsJoinable);
+    OutputFormat("| %d ", aResult->mIsJoinable);
 
-    mServer->OutputFormat("| %-16s ", aResult->mNetworkName.m8);
+    OutputFormat("| %-16s ", aResult->mNetworkName.m8);
 
-    mServer->OutputFormat("| ");
-    OutputBytes(aResult->mExtendedPanId.m8, OT_EXT_PAN_ID_SIZE);
-    mServer->OutputFormat(" ");
+    OutputFormat("| ");
+    OutputBytes(aResult->mExtendedPanId.m8);
+    OutputFormat(" ");
 
-    mServer->OutputFormat("| %04x | ", aResult->mPanId);
-    OutputBytes(aResult->mExtAddress.m8, OT_EXT_ADDRESS_SIZE);
-    mServer->OutputFormat(" | %2d ", aResult->mChannel);
-    mServer->OutputFormat("| %3d ", aResult->mRssi);
-    mServer->OutputFormat("| %3d |\r\n", aResult->mLqi);
+    OutputFormat("| %04x | ", aResult->mPanId);
+    OutputExtAddress(aResult->mExtAddress);
+    OutputFormat(" | %2d ", aResult->mChannel);
+    OutputFormat("| %3d ", aResult->mRssi);
+    OutputLine("| %3d |", aResult->mLqi);
 
 exit:
     return;
 }
 
-void OTCALL Interpreter::s_HandleEnergyScanResult(otEnergyScanResult *aResult, void *aContext)
+void Interpreter::HandleEnergyScanResult(otEnergyScanResult *aResult, void *aContext)
 {
     static_cast<Interpreter *>(aContext)->HandleEnergyScanResult(aResult);
 }
 
 void Interpreter::HandleEnergyScanResult(otEnergyScanResult *aResult)
 {
-    if (aResult == NULL)
+    if (aResult == nullptr)
     {
-        mServer->OutputFormat("Done\r\n");
+        OutputResult(OT_ERROR_NONE);
         ExitNow();
     }
 
-    mServer->OutputFormat("| %2d | %4d |\r\n", aResult->mChannel, aResult->mMaxRssi);
+    OutputLine("| %2d | %4d |", aResult->mChannel, aResult->mMaxRssi);
 
 exit:
     return;
 }
 
-void Interpreter::ProcessSingleton(int argc, char *argv[])
+otError Interpreter::ProcessSingleton(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
-
-    otError error = OT_ERROR_NONE;
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
     if (otThreadIsSingleton(mInstance))
     {
-        mServer->OutputFormat("true\r\n");
+        OutputLine("true");
     }
     else
     {
-        mServer->OutputFormat("false\r\n");
+        OutputLine("false");
     }
 
-    AppendResult(error);
+    return OT_ERROR_NONE;
 }
 
-#if OPENTHREAD_ENABLE_SNTP_CLIENT
-void Interpreter::ProcessSntp(int argc, char *argv[])
+#if OPENTHREAD_CONFIG_SNTP_CLIENT_ENABLE
+otError Interpreter::ProcessSntp(uint8_t aArgsLength, char *aArgs[])
 {
     otError          error = OT_ERROR_NONE;
-    long             port  = OT_SNTP_DEFAULT_SERVER_PORT;
+    uint16_t         port  = OT_SNTP_DEFAULT_SERVER_PORT;
     Ip6::MessageInfo messageInfo;
     otSntpQuery      query;
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
 
-    if (strcmp(argv[0], "query") == 0)
+    if (strcmp(aArgs[0], "query") == 0)
     {
         VerifyOrExit(!mSntpQueryingInProgress, error = OT_ERROR_BUSY);
 
-        messageInfo.mInterfaceId = OT_NETIF_INTERFACE_ID_THREAD;
-
-        if (argc > 1)
+        if (aArgsLength > 1)
         {
-            SuccessOrExit(error = messageInfo.GetPeerAddr().FromString(argv[1]));
+            SuccessOrExit(error = ParseAsIp6Address(aArgs[1], messageInfo.GetPeerAddr()));
         }
         else
         {
@@ -2947,32 +4073,31 @@ void Interpreter::ProcessSntp(int argc, char *argv[])
             SuccessOrExit(error = messageInfo.GetPeerAddr().FromString(OT_SNTP_DEFAULT_SERVER_IP));
         }
 
-        if (argc > 2)
+        if (aArgsLength > 2)
         {
-            SuccessOrExit(error = ParseLong(argv[2], port));
+            SuccessOrExit(error = ParseAsUint16(aArgs[2], port));
         }
 
-        messageInfo.SetPeerPort(static_cast<uint16_t>(port));
+        messageInfo.SetPeerPort(port);
 
         query.mMessageInfo = static_cast<const otMessageInfo *>(&messageInfo);
 
-        SuccessOrExit(error = otSntpClientQuery(mInstance, &query, &Interpreter::s_HandleSntpResponse, this));
+        SuccessOrExit(error = otSntpClientQuery(mInstance, &query, &Interpreter::HandleSntpResponse, this));
 
         mSntpQueryingInProgress = true;
     }
     else
     {
-        ExitNow(error = OT_ERROR_INVALID_ARGS);
+        ExitNow(error = OT_ERROR_INVALID_COMMAND);
     }
+
+    error = OT_ERROR_PENDING;
 
 exit:
-    if (error != OT_ERROR_NONE)
-    {
-        AppendResult(error);
-    }
+    return error;
 }
 
-void Interpreter::s_HandleSntpResponse(void *aContext, uint64_t aTime, otError aResult)
+void Interpreter::HandleSntpResponse(void *aContext, uint64_t aTime, otError aResult)
 {
     static_cast<Interpreter *>(aContext)->HandleSntpResponse(aTime, aResult);
 }
@@ -2983,76 +4108,112 @@ void Interpreter::HandleSntpResponse(uint64_t aTime, otError aResult)
     {
         // Some Embedded C libraries do not support printing of 64-bit unsigned integers.
         // To simplify, unix epoch time and era number are printed separately.
-        mServer->OutputFormat("SNTP response - Unix time: %ld (era: %ld)\r\n",
-                              static_cast<uint32_t>(aTime & UINT32_MAX), static_cast<uint32_t>(aTime >> 32));
+        OutputLine("SNTP response - Unix time: %u (era: %u)", static_cast<uint32_t>(aTime),
+                   static_cast<uint32_t>(aTime >> 32));
     }
     else
     {
-        mServer->OutputFormat("SNTP error - %s\r\n", otThreadErrorToString(aResult));
+        OutputLine("SNTP error - %s", otThreadErrorToString(aResult));
     }
 
     mSntpQueryingInProgress = false;
-}
-#endif
 
-void Interpreter::ProcessState(int argc, char *argv[])
+    OutputResult(OT_ERROR_NONE);
+}
+#endif // OPENTHREAD_CONFIG_SNTP_CLIENT_ENABLE
+
+#if OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE || OPENTHREAD_CONFIG_SRP_SERVER_ENABLE
+otError Interpreter::ProcessSrp(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
+    {
+#if OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE
+        OutputLine("client");
+#endif
+#if OPENTHREAD_CONFIG_SRP_SERVER_ENABLE
+        OutputLine("server");
+#endif
+        ExitNow();
+    }
+
+#if OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE
+    if (strcmp(aArgs[0], "client") == 0)
+    {
+        ExitNow(error = mSrpClient.Process(aArgsLength - 1, aArgs + 1));
+    }
+#endif
+#if OPENTHREAD_CONFIG_SRP_SERVER_ENABLE
+    if (strcmp(aArgs[0], "server") == 0)
+    {
+        ExitNow(error = mSrpServer.Process(aArgsLength - 1, aArgs + 1));
+    }
+#endif
+
+    error = OT_ERROR_INVALID_COMMAND;
+
+exit:
+    return error;
+}
+#endif // OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE || OPENTHREAD_CONFIG_SRP_SERVER_ENABLE
+
+otError Interpreter::ProcessState(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    if (aArgsLength == 0)
     {
         switch (otThreadGetDeviceRole(mInstance))
         {
         case OT_DEVICE_ROLE_DISABLED:
-            mServer->OutputFormat("disabled\r\n");
+            OutputLine("disabled");
             break;
 
         case OT_DEVICE_ROLE_DETACHED:
-            mServer->OutputFormat("detached\r\n");
+            OutputLine("detached");
             break;
 
         case OT_DEVICE_ROLE_CHILD:
-            mServer->OutputFormat("child\r\n");
+            OutputLine("child");
             break;
 
 #if OPENTHREAD_FTD
-
         case OT_DEVICE_ROLE_ROUTER:
-            mServer->OutputFormat("router\r\n");
+            OutputLine("router");
             break;
 
         case OT_DEVICE_ROLE_LEADER:
-            mServer->OutputFormat("leader\r\n");
+            OutputLine("leader");
             break;
-#endif // OPENTHREAD_FTD
+#endif
 
         default:
-            mServer->OutputFormat("invalid state\r\n");
+            OutputLine("invalid state");
             break;
         }
     }
     else
     {
-        if (strcmp(argv[0], "detached") == 0)
+        if (strcmp(aArgs[0], "detached") == 0)
         {
             SuccessOrExit(error = otThreadBecomeDetached(mInstance));
         }
-        else if (strcmp(argv[0], "child") == 0)
+        else if (strcmp(aArgs[0], "child") == 0)
         {
             SuccessOrExit(error = otThreadBecomeChild(mInstance));
         }
 
 #if OPENTHREAD_FTD
-        else if (strcmp(argv[0], "router") == 0)
+        else if (strcmp(aArgs[0], "router") == 0)
         {
             SuccessOrExit(error = otThreadBecomeRouter(mInstance));
         }
-        else if (strcmp(argv[0], "leader") == 0)
+        else if (strcmp(aArgs[0], "leader") == 0)
         {
             SuccessOrExit(error = otThreadBecomeLeader(mInstance));
         }
-
-#endif // OPENTHREAD_FTD
+#endif
         else
         {
             ExitNow(error = OT_ERROR_INVALID_ARGS);
@@ -3060,486 +4221,207 @@ void Interpreter::ProcessState(int argc, char *argv[])
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void Interpreter::ProcessThread(int argc, char *argv[])
+otError Interpreter::ProcessThread(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
-
     otError error = OT_ERROR_NONE;
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
 
-    if (strcmp(argv[0], "start") == 0)
+    if (strcmp(aArgs[0], "start") == 0)
     {
         SuccessOrExit(error = otThreadSetEnabled(mInstance, true));
     }
-    else if (strcmp(argv[0], "stop") == 0)
+    else if (strcmp(aArgs[0], "stop") == 0)
     {
         SuccessOrExit(error = otThreadSetEnabled(mInstance, false));
     }
+    else if (strcmp(aArgs[0], "version") == 0)
+    {
+        OutputLine("%u", otThreadGetVersion());
+    }
     else
     {
-        ExitNow(error = OT_ERROR_INVALID_ARGS);
+        ExitNow(error = OT_ERROR_INVALID_COMMAND);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void Interpreter::ProcessDataset(int argc, char *argv[])
+otError Interpreter::ProcessDataset(uint8_t aArgsLength, char *aArgs[])
 {
-    otError error;
-    error = mDataset.Process(argc, argv);
-    AppendResult(error);
+    return mDataset.Process(aArgsLength, aArgs);
 }
 
-#ifndef OTDLL
-void Interpreter::ProcessTxPower(int argc, char *argv[])
+otError Interpreter::ProcessTxPower(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
+    int8_t  power;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
-        int8_t power;
-
         SuccessOrExit(error = otPlatRadioGetTransmitPower(mInstance, &power));
-        mServer->OutputFormat("%d dBm\r\n", power);
+        OutputLine("%d dBm", power);
     }
     else
     {
-        long value;
-
-        SuccessOrExit(error = ParseLong(argv[0], value));
-        SuccessOrExit(error = otPlatRadioSetTransmitPower(mInstance, static_cast<int8_t>(value)));
+        SuccessOrExit(error = ParseAsInt8(aArgs[0], power));
+        SuccessOrExit(error = otPlatRadioSetTransmitPower(mInstance, power));
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void Interpreter::ProcessUdp(int argc, char *argv[])
+otError Interpreter::ProcessUdp(uint8_t aArgsLength, char *aArgs[])
 {
-    otError error;
-    error = mUdp.Process(argc, argv);
-    AppendResult(error);
-}
-#endif
-
-void Interpreter::ProcessVersion(int argc, char *argv[])
-{
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
-
-    otStringPtr version(otGetVersionString());
-    mServer->OutputFormat("%s\r\n", (const char *)version);
-    AppendResult(OT_ERROR_NONE);
+    return mUdp.Process(aArgsLength, aArgs);
 }
 
-#if OPENTHREAD_ENABLE_COMMISSIONER && OPENTHREAD_FTD
-
-void Interpreter::ProcessCommissioner(int argc, char *argv[])
+otError Interpreter::ProcessUnsecurePort(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength >= 1, error = OT_ERROR_INVALID_ARGS);
 
-    if (strcmp(argv[0], "start") == 0)
+    if (strcmp(aArgs[0], "add") == 0)
     {
-        SuccessOrExit(error = otCommissionerStart(mInstance));
+        uint16_t port;
+
+        VerifyOrExit(aArgsLength == 2, error = OT_ERROR_INVALID_ARGS);
+        SuccessOrExit(error = ParseAsUint16(aArgs[1], port));
+        SuccessOrExit(error = otIp6AddUnsecurePort(mInstance, port));
     }
-    else if (strcmp(argv[0], "stop") == 0)
+    else if (strcmp(aArgs[0], "remove") == 0)
     {
-        SuccessOrExit(error = otCommissionerStop(mInstance));
-    }
-    else if (strcmp(argv[0], "joiner") == 0)
-    {
-        otExtAddress        addr;
-        const otExtAddress *addrPtr;
+        VerifyOrExit(aArgsLength == 2, error = OT_ERROR_INVALID_ARGS);
 
-        VerifyOrExit(argc > 2, error = OT_ERROR_INVALID_ARGS);
-
-        if (strcmp(argv[2], "*") == 0)
+        if (strcmp(aArgs[1], "all") == 0)
         {
-            addrPtr = NULL;
+            otIp6RemoveAllUnsecurePorts(mInstance);
         }
         else
         {
-            VerifyOrExit(Hex2Bin(argv[2], addr.m8, sizeof(addr)) == sizeof(addr), error = OT_ERROR_PARSE);
-            addrPtr = &addr;
-        }
+            uint16_t port;
 
-        if (strcmp(argv[1], "add") == 0)
+            SuccessOrExit(error = ParseAsUint16(aArgs[1], port));
+            SuccessOrExit(error = otIp6RemoveUnsecurePort(mInstance, port));
+        }
+    }
+    else if (strcmp(aArgs[0], "get") == 0)
+    {
+        const uint16_t *ports;
+        uint8_t         numPorts;
+
+        ports = otIp6GetUnsecurePorts(mInstance, &numPorts);
+
+        if (ports != nullptr)
         {
-            VerifyOrExit(argc > 3, error = OT_ERROR_INVALID_ARGS);
-            // Timeout parameter is optional - if not specified, use default value.
-            unsigned long timeout = kDefaultJoinerTimeout;
-
-            if (argc > 4)
+            for (uint8_t i = 0; i < numPorts; i++)
             {
-                SuccessOrExit(error = ParseUnsignedLong(argv[4], timeout));
-            }
-
-            SuccessOrExit(error = otCommissionerAddJoiner(mInstance, addrPtr, argv[3], static_cast<uint32_t>(timeout)));
-        }
-        else if (strcmp(argv[1], "remove") == 0)
-        {
-            SuccessOrExit(error = otCommissionerRemoveJoiner(mInstance, addrPtr));
-        }
-    }
-    else if (strcmp(argv[0], "provisioningurl") == 0)
-    {
-        SuccessOrExit(error = otCommissionerSetProvisioningUrl(mInstance, (argc > 1) ? argv[1] : NULL));
-    }
-    else if (strcmp(argv[0], "announce") == 0)
-    {
-        long         mask;
-        long         count;
-        long         period;
-        otIp6Address address;
-
-        VerifyOrExit(argc > 4, error = OT_ERROR_INVALID_ARGS);
-
-        // mask
-        SuccessOrExit(error = ParseLong(argv[1], mask));
-
-        // count
-        SuccessOrExit(error = ParseLong(argv[2], count));
-
-        // period
-        SuccessOrExit(error = ParseLong(argv[3], period));
-
-        // destination
-        SuccessOrExit(error = otIp6AddressFromString(argv[4], &address));
-
-        SuccessOrExit(error = otCommissionerAnnounceBegin(mInstance, static_cast<uint32_t>(mask),
-                                                          static_cast<uint8_t>(count), static_cast<uint16_t>(period),
-                                                          &address));
-    }
-    else if (strcmp(argv[0], "energy") == 0)
-    {
-        long         mask;
-        long         count;
-        long         period;
-        long         scanDuration;
-        otIp6Address address;
-
-        VerifyOrExit(argc > 5, error = OT_ERROR_INVALID_ARGS);
-
-        // mask
-        SuccessOrExit(error = ParseLong(argv[1], mask));
-
-        // count
-        SuccessOrExit(error = ParseLong(argv[2], count));
-
-        // period
-        SuccessOrExit(error = ParseLong(argv[3], period));
-
-        // scan duration
-        SuccessOrExit(error = ParseLong(argv[4], scanDuration));
-
-        // destination
-        SuccessOrExit(error = otIp6AddressFromString(argv[5], &address));
-
-        SuccessOrExit(error =
-                          otCommissionerEnergyScan(mInstance, static_cast<uint32_t>(mask), static_cast<uint8_t>(count),
-                                                   static_cast<uint16_t>(period), static_cast<uint16_t>(scanDuration),
-                                                   &address, Interpreter::s_HandleEnergyReport, this));
-    }
-    else if (strcmp(argv[0], "panid") == 0)
-    {
-        long         panid;
-        long         mask;
-        otIp6Address address;
-
-        VerifyOrExit(argc > 3, error = OT_ERROR_INVALID_ARGS);
-
-        // panid
-        SuccessOrExit(error = ParseLong(argv[1], panid));
-
-        // mask
-        SuccessOrExit(error = ParseLong(argv[2], mask));
-
-        // destination
-        SuccessOrExit(error = otIp6AddressFromString(argv[3], &address));
-
-        SuccessOrExit(error =
-                          otCommissionerPanIdQuery(mInstance, static_cast<uint16_t>(panid), static_cast<uint32_t>(mask),
-                                                   &address, Interpreter::s_HandlePanIdConflict, this));
-    }
-    else if (strcmp(argv[0], "mgmtget") == 0)
-    {
-        uint8_t tlvs[32];
-        long    value;
-        int     length = 0;
-
-        for (uint8_t index = 1; index < argc; index++)
-        {
-            VerifyOrExit(static_cast<size_t>(length) < sizeof(tlvs), error = OT_ERROR_NO_BUFS);
-
-            if (strcmp(argv[index], "locator") == 0)
-            {
-                tlvs[length++] = OT_MESHCOP_TLV_BORDER_AGENT_RLOC;
-            }
-            else if (strcmp(argv[index], "sessionid") == 0)
-            {
-                tlvs[length++] = OT_MESHCOP_TLV_COMM_SESSION_ID;
-            }
-            else if (strcmp(argv[index], "steeringdata") == 0)
-            {
-                tlvs[length++] = OT_MESHCOP_TLV_STEERING_DATA;
-            }
-            else if (strcmp(argv[index], "joinerudpport") == 0)
-            {
-                tlvs[length++] = OT_MESHCOP_TLV_JOINER_UDP_PORT;
-            }
-            else if (strcmp(argv[index], "binary") == 0)
-            {
-                VerifyOrExit(++index < argc, error = OT_ERROR_INVALID_ARGS);
-                value = static_cast<long>(strlen(argv[index]) + 1) / 2;
-                VerifyOrExit(static_cast<size_t>(value) <= (sizeof(tlvs) - static_cast<size_t>(length)),
-                             error = OT_ERROR_NO_BUFS);
-                VerifyOrExit(Interpreter::Hex2Bin(argv[index], tlvs + length, static_cast<uint16_t>(value)) >= 0,
-                             error = OT_ERROR_PARSE);
-                length += value;
-            }
-            else
-            {
-                ExitNow(error = OT_ERROR_INVALID_ARGS);
+                OutputFormat("%d ", ports[i]);
             }
         }
 
-        SuccessOrExit(error = otCommissionerSendMgmtGet(mInstance, tlvs, static_cast<uint8_t>(length)));
-    }
-    else if (strcmp(argv[0], "mgmtset") == 0)
-    {
-        otCommissioningDataset dataset;
-        uint8_t                tlvs[32];
-        long                   value;
-        int                    length = 0;
-
-        VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
-
-        memset(&dataset, 0, sizeof(dataset));
-
-        for (uint8_t index = 1; index < argc; index++)
-        {
-            VerifyOrExit(static_cast<size_t>(length) < sizeof(tlvs), error = OT_ERROR_NO_BUFS);
-
-            if (strcmp(argv[index], "locator") == 0)
-            {
-                VerifyOrExit(++index < argc, error = OT_ERROR_INVALID_ARGS);
-                dataset.mIsLocatorSet = true;
-                SuccessOrExit(error = Interpreter::ParseLong(argv[index], value));
-                dataset.mLocator = static_cast<uint16_t>(value);
-            }
-            else if (strcmp(argv[index], "sessionid") == 0)
-            {
-                VerifyOrExit(++index < argc, error = OT_ERROR_INVALID_ARGS);
-                dataset.mIsSessionIdSet = true;
-                SuccessOrExit(error = Interpreter::ParseLong(argv[index], value));
-                dataset.mSessionId = static_cast<uint16_t>(value);
-            }
-            else if (strcmp(argv[index], "steeringdata") == 0)
-            {
-                VerifyOrExit(++index < argc, error = OT_ERROR_INVALID_ARGS);
-                dataset.mIsSteeringDataSet = true;
-                length                     = static_cast<int>((strlen(argv[index]) + 1) / 2);
-                VerifyOrExit(static_cast<size_t>(length) <= OT_STEERING_DATA_MAX_LENGTH, error = OT_ERROR_NO_BUFS);
-                VerifyOrExit(
-                    Interpreter::Hex2Bin(argv[index], dataset.mSteeringData.m8, static_cast<uint16_t>(length)) >= 0,
-                    error = OT_ERROR_PARSE);
-                dataset.mSteeringData.mLength = static_cast<uint8_t>(length);
-                length                        = 0;
-            }
-            else if (strcmp(argv[index], "joinerudpport") == 0)
-            {
-                VerifyOrExit(++index < argc, error = OT_ERROR_INVALID_ARGS);
-                dataset.mIsJoinerUdpPortSet = true;
-                SuccessOrExit(error = Interpreter::ParseLong(argv[index], value));
-                dataset.mJoinerUdpPort = static_cast<uint16_t>(value);
-            }
-            else if (strcmp(argv[index], "binary") == 0)
-            {
-                VerifyOrExit(++index < argc, error = OT_ERROR_INVALID_ARGS);
-                length = static_cast<int>((strlen(argv[index]) + 1) / 2);
-                VerifyOrExit(static_cast<size_t>(length) <= sizeof(tlvs), error = OT_ERROR_NO_BUFS);
-                VerifyOrExit(Interpreter::Hex2Bin(argv[index], tlvs, static_cast<uint16_t>(length)) >= 0,
-                             error = OT_ERROR_PARSE);
-            }
-            else
-            {
-                ExitNow(error = OT_ERROR_INVALID_ARGS);
-            }
-        }
-
-        SuccessOrExit(error = otCommissionerSendMgmtSet(mInstance, &dataset, tlvs, static_cast<uint8_t>(length)));
-    }
-    else if (strcmp(argv[0], "sessionid") == 0)
-    {
-        mServer->OutputFormat("%d\r\n", otCommissionerGetSessionId(mInstance));
+        OutputLine("");
     }
     else
     {
-        ExitNow(error = OT_ERROR_INVALID_ARGS);
+        ExitNow(error = OT_ERROR_INVALID_COMMAND);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void OTCALL Interpreter::s_HandleEnergyReport(uint32_t       aChannelMask,
-                                              const uint8_t *aEnergyList,
-                                              uint8_t        aEnergyListLength,
-                                              void *         aContext)
-{
-    static_cast<Interpreter *>(aContext)->HandleEnergyReport(aChannelMask, aEnergyList, aEnergyListLength);
-}
-
-void Interpreter::HandleEnergyReport(uint32_t aChannelMask, const uint8_t *aEnergyList, uint8_t aEnergyListLength)
-{
-    mServer->OutputFormat("Energy: %08x ", aChannelMask);
-
-    for (uint8_t i = 0; i < aEnergyListLength; i++)
-    {
-        mServer->OutputFormat("%d ", aEnergyList[i]);
-    }
-
-    mServer->OutputFormat("\r\n");
-}
-
-void OTCALL Interpreter::s_HandlePanIdConflict(uint16_t aPanId, uint32_t aChannelMask, void *aContext)
-{
-    static_cast<Interpreter *>(aContext)->HandlePanIdConflict(aPanId, aChannelMask);
-}
-
-void Interpreter::HandlePanIdConflict(uint16_t aPanId, uint32_t aChannelMask)
-{
-    mServer->OutputFormat("Conflict: %04x, %08x\r\n", aPanId, aChannelMask);
-}
-
-#endif //  OPENTHREAD_ENABLE_COMMISSIONER && OPENTHREAD_FTD
-
-#if OPENTHREAD_ENABLE_JOINER
-
-void Interpreter::ProcessJoiner(int argc, char *argv[])
+otError Interpreter::ProcessVersion(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
-
-    if (strcmp(argv[0], "start") == 0)
+    if (aArgsLength == 0)
     {
-        const char *provisioningUrl;
-        VerifyOrExit(argc > 1, error = OT_ERROR_INVALID_ARGS);
-        provisioningUrl = (argc > 2) ? argv[2] : NULL;
-        otJoinerStart(mInstance, argv[1], provisioningUrl, PACKAGE_NAME, OPENTHREAD_CONFIG_PLATFORM_INFO,
-                      PACKAGE_VERSION, NULL, &Interpreter::s_HandleJoinerCallback, this);
+        OutputLine("%s", otGetVersionString());
+        ExitNow();
     }
-    else if (strcmp(argv[0], "stop") == 0)
+
+    if (strcmp(aArgs[0], "api") == 0)
     {
-        otJoinerStop(mInstance);
+        OutputLine("%d", OPENTHREAD_API_VERSION);
     }
     else
     {
-        ExitNow(error = OT_ERROR_INVALID_ARGS);
+        ExitNow(error = OT_ERROR_INVALID_COMMAND);
     }
 
 exit:
-    AppendResult(error);
+    return error;
 }
 
-void Interpreter::ProcessJoinerId(int argc, char *argv[])
+#if OPENTHREAD_CONFIG_COMMISSIONER_ENABLE && OPENTHREAD_FTD
+otError Interpreter::ProcessCommissioner(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argv);
-
-    otError      error = OT_ERROR_NONE;
-    otExtAddress joinerId;
-
-    VerifyOrExit(argc == 0, error = OT_ERROR_INVALID_ARGS);
-
-    otJoinerGetId(mInstance, &joinerId);
-    OutputBytes(joinerId.m8, sizeof(joinerId));
-    mServer->OutputFormat("\r\n");
-
-exit:
-    AppendResult(error);
-}
-
-#endif // OPENTHREAD_ENABLE_JOINER
-
-void OTCALL Interpreter::s_HandleJoinerCallback(otError aError, void *aContext)
-{
-    static_cast<Interpreter *>(aContext)->HandleJoinerCallback(aError);
-}
-
-void Interpreter::HandleJoinerCallback(otError aError)
-{
-    switch (aError)
-    {
-    case OT_ERROR_NONE:
-        mServer->OutputFormat("Join success\r\n");
-        break;
-
-    default:
-        mServer->OutputFormat("Join failed [%s]\r\n", otThreadErrorToString(aError));
-        break;
-    }
-}
-
-#if OPENTHREAD_FTD
-void Interpreter::ProcessJoinerPort(int argc, char *argv[])
-{
-    otError error = OT_ERROR_NONE;
-    long    value;
-
-    if (argc == 0)
-    {
-        mServer->OutputFormat("%d\r\n", otThreadGetJoinerUdpPort(mInstance));
-    }
-    else
-    {
-        SuccessOrExit(error = ParseLong(argv[0], value));
-        error = otThreadSetJoinerUdpPort(mInstance, static_cast<uint16_t>(value));
-    }
-
-exit:
-    AppendResult(error);
+    return mCommissioner.Process(aArgsLength, aArgs);
 }
 #endif
 
-#if OPENTHREAD_ENABLE_MAC_FILTER
-void Interpreter::ProcessMacFilter(int argc, char *argv[])
+#if OPENTHREAD_CONFIG_JOINER_ENABLE
+otError Interpreter::ProcessJoiner(uint8_t aArgsLength, char *aArgs[])
+{
+    return mJoiner.Process(aArgsLength, aArgs);
+}
+#endif
+
+#if OPENTHREAD_FTD
+otError Interpreter::ProcessJoinerPort(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
+    {
+        OutputLine("%d", otThreadGetJoinerUdpPort(mInstance));
+    }
+    else
+    {
+        uint16_t port;
+
+        SuccessOrExit(error = ParseAsUint16(aArgs[0], port));
+        error = otThreadSetJoinerUdpPort(mInstance, port);
+    }
+
+exit:
+    return error;
+}
+#endif
+
+#if OPENTHREAD_CONFIG_MAC_FILTER_ENABLE
+otError Interpreter::ProcessMacFilter(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    if (aArgsLength == 0)
     {
         PrintMacFilter();
     }
     else
     {
-        if (strcmp(argv[0], "addr") == 0)
+        if (strcmp(aArgs[0], "addr") == 0)
         {
-            error = ProcessMacFilterAddress(argc - 1, argv + 1);
+            error = ProcessMacFilterAddress(aArgsLength - 1, aArgs + 1);
         }
-
-#ifndef OTDLL
-        else if (strcmp(argv[0], "rss") == 0)
+        else if (strcmp(aArgs[0], "rss") == 0)
         {
-            error = ProcessMacFilterRss(argc - 1, argv + 1);
+            error = ProcessMacFilterRss(aArgsLength - 1, aArgs + 1);
         }
-
-#endif
         else
         {
-            error = OT_ERROR_INVALID_ARGS;
+            error = OT_ERROR_INVALID_COMMAND;
         }
     }
 
-    AppendResult(error);
+    return error;
 }
 
 void Interpreter::PrintMacFilter(void)
@@ -3550,42 +4432,31 @@ void Interpreter::PrintMacFilter(void)
 
     if (mode == OT_MAC_FILTER_ADDRESS_MODE_DISABLED)
     {
-        mServer->OutputFormat("Address Mode: Disabled\r\n");
+        OutputLine("Address Mode: Disabled");
     }
-    else if (mode == OT_MAC_FILTER_ADDRESS_MODE_WHITELIST)
+    else if (mode == OT_MAC_FILTER_ADDRESS_MODE_ALLOWLIST)
     {
-        mServer->OutputFormat("Address Mode: Whitelist\r\n");
+        OutputLine("Address Mode: Allowlist");
     }
-    else if (mode == OT_MAC_FILTER_ADDRESS_MODE_BLACKLIST)
+    else if (mode == OT_MAC_FILTER_ADDRESS_MODE_DENYLIST)
     {
-        mServer->OutputFormat("Address Mode: Blacklist\r\n");
+        OutputLine("Address Mode: Denylist");
     }
 
     while (otLinkFilterGetNextAddress(mInstance, &iterator, &entry) == OT_ERROR_NONE)
     {
-        OutputBytes(entry.mExtAddress.m8, OT_EXT_ADDRESS_SIZE);
+        OutputExtAddress(entry.mExtAddress);
 
         if (entry.mRssIn != OT_MAC_FILTER_FIXED_RSS_DISABLED)
         {
-#ifndef OTDLL
-
-            mServer->OutputFormat(" : rss %d (lqi %d)", entry.mRssIn,
-                                  otLinkConvertRssToLinkQuality(mInstance, entry.mRssIn));
-
-#else
-
-            mServer->OutputFormat(" : rss %d", entry.mRssIn);
-
-#endif // OTDLL
+            OutputFormat(" : rss %d (lqi %d)", entry.mRssIn, otLinkConvertRssToLinkQuality(mInstance, entry.mRssIn));
         }
 
-        mServer->OutputFormat("\r\n");
+        OutputLine("");
     }
 
-#ifndef OTDLL
-
     iterator = OT_MAC_FILTER_ITERATOR_INIT;
-    mServer->OutputFormat("RssIn List:\r\n");
+    OutputLine("RssIn List:");
 
     while (otLinkFilterGetNextRssIn(mInstance, &iterator, &entry) == OT_ERROR_NONE)
     {
@@ -3601,116 +4472,101 @@ void Interpreter::PrintMacFilter(void)
 
         if (i == OT_EXT_ADDRESS_SIZE)
         {
-            mServer->OutputFormat("Default rss : %d (lqi %d)\r\n", entry.mRssIn,
-                                  otLinkConvertRssToLinkQuality(mInstance, entry.mRssIn));
+            OutputLine("Default rss : %d (lqi %d)", entry.mRssIn,
+                       otLinkConvertRssToLinkQuality(mInstance, entry.mRssIn));
         }
         else
         {
-            OutputBytes(entry.mExtAddress.m8, OT_EXT_ADDRESS_SIZE);
-            mServer->OutputFormat(" : rss %d (lqi %d)\r\n", entry.mRssIn,
-                                  otLinkConvertRssToLinkQuality(mInstance, entry.mRssIn));
+            OutputExtAddress(entry.mExtAddress);
+            OutputLine(" : rss %d (lqi %d)", entry.mRssIn, otLinkConvertRssToLinkQuality(mInstance, entry.mRssIn));
         }
     }
-
-#endif // OTDLL
 }
 
-otError Interpreter::ProcessMacFilterAddress(int argc, char *argv[])
+otError Interpreter::ProcessMacFilterAddress(uint8_t aArgsLength, char *aArgs[])
 {
     otError                error = OT_ERROR_NONE;
     otExtAddress           extAddr;
     otMacFilterEntry       entry;
     otMacFilterIterator    iterator = OT_MAC_FILTER_ITERATOR_INIT;
     otMacFilterAddressMode mode     = otLinkFilterGetAddressMode(mInstance);
-    long                   value;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
         if (mode == OT_MAC_FILTER_ADDRESS_MODE_DISABLED)
         {
-            mServer->OutputFormat("Disabled\r\n");
+            OutputLine("Disabled");
         }
-        else if (mode == OT_MAC_FILTER_ADDRESS_MODE_WHITELIST)
+        else if (mode == OT_MAC_FILTER_ADDRESS_MODE_ALLOWLIST)
         {
-            mServer->OutputFormat("Whitelist\r\n");
+            OutputLine("Allowlist");
         }
-        else if (mode == OT_MAC_FILTER_ADDRESS_MODE_BLACKLIST)
+        else if (mode == OT_MAC_FILTER_ADDRESS_MODE_DENYLIST)
         {
-            mServer->OutputFormat("Blacklist\r\n");
+            OutputLine("Denylist");
         }
 
         while (otLinkFilterGetNextAddress(mInstance, &iterator, &entry) == OT_ERROR_NONE)
         {
-            OutputBytes(entry.mExtAddress.m8, OT_EXT_ADDRESS_SIZE);
+            OutputExtAddress(entry.mExtAddress);
 
             if (entry.mRssIn != OT_MAC_FILTER_FIXED_RSS_DISABLED)
             {
-#ifndef OTDLL
-
-                mServer->OutputFormat(" : rss %d (lqi %d)", entry.mRssIn,
-                                      otLinkConvertRssToLinkQuality(mInstance, entry.mRssIn));
-
-#else
-
-                mServer->OutputFormat(" : rss %d", entry.mRssIn);
-
-#endif // OTDLL
+                OutputFormat(" : rss %d (lqi %d)", entry.mRssIn,
+                             otLinkConvertRssToLinkQuality(mInstance, entry.mRssIn));
             }
 
-            mServer->OutputFormat("\r\n");
+            OutputLine("");
         }
     }
     else
     {
-        if (strcmp(argv[0], "disable") == 0)
+        if (strcmp(aArgs[0], "disable") == 0)
         {
-            VerifyOrExit(argc == 1, error = OT_ERROR_INVALID_ARGS);
-            SuccessOrExit(error = otLinkFilterSetAddressMode(mInstance, OT_MAC_FILTER_ADDRESS_MODE_DISABLED));
+            VerifyOrExit(aArgsLength == 1, error = OT_ERROR_INVALID_ARGS);
+            otLinkFilterSetAddressMode(mInstance, OT_MAC_FILTER_ADDRESS_MODE_DISABLED);
         }
-        else if (strcmp(argv[0], "whitelist") == 0)
+        else if (strcmp(aArgs[0], "allowlist") == 0)
         {
-            VerifyOrExit(argc == 1, error = OT_ERROR_INVALID_ARGS);
-            SuccessOrExit(error = otLinkFilterSetAddressMode(mInstance, OT_MAC_FILTER_ADDRESS_MODE_WHITELIST));
+            VerifyOrExit(aArgsLength == 1, error = OT_ERROR_INVALID_ARGS);
+            otLinkFilterSetAddressMode(mInstance, OT_MAC_FILTER_ADDRESS_MODE_ALLOWLIST);
         }
-        else if (strcmp(argv[0], "blacklist") == 0)
+        else if (strcmp(aArgs[0], "denylist") == 0)
         {
-            VerifyOrExit(argc == 1, error = OT_ERROR_INVALID_ARGS);
-            SuccessOrExit(error = otLinkFilterSetAddressMode(mInstance, OT_MAC_FILTER_ADDRESS_MODE_BLACKLIST));
+            VerifyOrExit(aArgsLength == 1, error = OT_ERROR_INVALID_ARGS);
+            otLinkFilterSetAddressMode(mInstance, OT_MAC_FILTER_ADDRESS_MODE_DENYLIST);
         }
-        else if (strcmp(argv[0], "add") == 0)
+        else if (strcmp(aArgs[0], "add") == 0)
         {
-            VerifyOrExit(argc >= 2, error = OT_ERROR_INVALID_ARGS);
-            VerifyOrExit(Hex2Bin(argv[1], extAddr.m8, OT_EXT_ADDRESS_SIZE) == OT_EXT_ADDRESS_SIZE,
-                         error = OT_ERROR_PARSE);
-
+            VerifyOrExit(aArgsLength >= 2, error = OT_ERROR_INVALID_ARGS);
+            SuccessOrExit(error = ParseAsHexString(aArgs[1], extAddr.m8));
             error = otLinkFilterAddAddress(mInstance, &extAddr);
 
             VerifyOrExit(error == OT_ERROR_NONE || error == OT_ERROR_ALREADY);
 
-            if (argc > 2)
+            if (aArgsLength > 2)
             {
-                int8_t rss = 0;
-                VerifyOrExit(argc == 3, error = OT_ERROR_INVALID_ARGS);
-                SuccessOrExit(error = ParseLong(argv[2], value));
-                rss = static_cast<int8_t>(value);
+                int8_t rss;
+
+                VerifyOrExit(aArgsLength == 3, error = OT_ERROR_INVALID_ARGS);
+                SuccessOrExit(error = ParseAsInt8(aArgs[2], rss));
                 SuccessOrExit(error = otLinkFilterAddRssIn(mInstance, &extAddr, rss));
             }
         }
-        else if (strcmp(argv[0], "remove") == 0)
+        else if (strcmp(aArgs[0], "remove") == 0)
         {
-            VerifyOrExit(argc == 2, error = OT_ERROR_INVALID_ARGS);
-            VerifyOrExit(Hex2Bin(argv[1], extAddr.m8, OT_EXT_ADDRESS_SIZE) == OT_EXT_ADDRESS_SIZE,
-                         error = OT_ERROR_PARSE);
-            SuccessOrExit(error = otLinkFilterRemoveAddress(mInstance, &extAddr));
+            VerifyOrExit(aArgsLength == 2, error = OT_ERROR_INVALID_ARGS);
+            SuccessOrExit(error = ParseAsHexString(aArgs[1], extAddr.m8));
+            otLinkFilterRemoveAddress(mInstance, &extAddr);
         }
-        else if (strcmp(argv[0], "clear") == 0)
+        else if (strcmp(aArgs[0], "clear") == 0)
         {
-            VerifyOrExit(argc == 1, error = OT_ERROR_INVALID_ARGS);
+            VerifyOrExit(aArgsLength == 1, error = OT_ERROR_INVALID_ARGS);
             otLinkFilterClearAddresses(mInstance);
         }
         else
         {
-            error = OT_ERROR_INVALID_ARGS;
+            error = OT_ERROR_INVALID_COMMAND;
         }
     }
 
@@ -3718,18 +4574,15 @@ exit:
     return error;
 }
 
-#ifndef OTDLL
-
-otError Interpreter::ProcessMacFilterRss(int argc, char *argv[])
+otError Interpreter::ProcessMacFilterRss(uint8_t aArgsLength, char *aArgs[])
 {
     otError             error = OT_ERROR_NONE;
     otMacFilterEntry    entry;
     otMacFilterIterator iterator = OT_MAC_FILTER_ITERATOR_INIT;
     otExtAddress        extAddr;
-    long                value;
     int8_t              rss;
 
-    if (argc == 0)
+    if (aArgsLength == 0)
     {
         while (otLinkFilterGetNextRssIn(mInstance, &iterator, &entry) == OT_ERROR_NONE)
         {
@@ -3745,81 +4598,74 @@ otError Interpreter::ProcessMacFilterRss(int argc, char *argv[])
 
             if (i == OT_EXT_ADDRESS_SIZE)
             {
-                mServer->OutputFormat("Default rss: %d (lqi %d)\r\n", entry.mRssIn,
-                                      otLinkConvertRssToLinkQuality(mInstance, entry.mRssIn));
+                OutputLine("Default rss: %d (lqi %d)", entry.mRssIn,
+                           otLinkConvertRssToLinkQuality(mInstance, entry.mRssIn));
             }
             else
             {
-                OutputBytes(entry.mExtAddress.m8, OT_EXT_ADDRESS_SIZE);
-                mServer->OutputFormat(" : rss %d (lqi %d)\r\n", entry.mRssIn,
-                                      otLinkConvertRssToLinkQuality(mInstance, entry.mRssIn));
+                OutputExtAddress(entry.mExtAddress);
+                OutputLine(" : rss %d (lqi %d)", entry.mRssIn, otLinkConvertRssToLinkQuality(mInstance, entry.mRssIn));
             }
         }
     }
     else
     {
-        if (strcmp(argv[0], "add-lqi") == 0)
+        if (strcmp(aArgs[0], "add-lqi") == 0)
         {
-            uint8_t linkquality = 0;
-            VerifyOrExit(argc == 3, error = OT_ERROR_INVALID_ARGS);
-            SuccessOrExit(error = ParseLong(argv[2], value));
-            linkquality = static_cast<uint8_t>(value);
-            VerifyOrExit(linkquality <= 3, error = OT_ERROR_PARSE);
-            rss = otLinkConvertLinkQualityToRss(mInstance, linkquality);
+            uint8_t linkQuality;
 
-            if (strcmp(argv[1], "*") == 0)
+            VerifyOrExit(aArgsLength == 3, error = OT_ERROR_INVALID_ARGS);
+
+            SuccessOrExit(error = ParseAsUint8(aArgs[2], linkQuality));
+            VerifyOrExit(linkQuality <= 3, error = OT_ERROR_INVALID_ARGS);
+            rss = otLinkConvertLinkQualityToRss(mInstance, linkQuality);
+
+            if (strcmp(aArgs[1], "*") == 0)
             {
-                SuccessOrExit(error = otLinkFilterAddRssIn(mInstance, NULL, rss));
+                otLinkFilterSetDefaultRssIn(mInstance, rss);
             }
             else
             {
-                VerifyOrExit(Hex2Bin(argv[1], extAddr.m8, OT_EXT_ADDRESS_SIZE) == OT_EXT_ADDRESS_SIZE,
-                             error = OT_ERROR_PARSE);
-
+                SuccessOrExit(error = ParseAsHexString(aArgs[1], extAddr.m8));
                 SuccessOrExit(error = otLinkFilterAddRssIn(mInstance, &extAddr, rss));
             }
         }
-        else if (strcmp(argv[0], "add") == 0)
+        else if (strcmp(aArgs[0], "add") == 0)
         {
-            VerifyOrExit(argc == 3, error = OT_ERROR_INVALID_ARGS);
-            SuccessOrExit(error = ParseLong(argv[2], value));
-            rss = static_cast<int8_t>(value);
+            VerifyOrExit(aArgsLength == 3, error = OT_ERROR_INVALID_ARGS);
+            SuccessOrExit(error = ParseAsInt8(aArgs[2], rss));
 
-            if (strcmp(argv[1], "*") == 0)
+            if (strcmp(aArgs[1], "*") == 0)
             {
-                SuccessOrExit(error = otLinkFilterAddRssIn(mInstance, NULL, rss));
+                otLinkFilterSetDefaultRssIn(mInstance, rss);
             }
             else
             {
-                VerifyOrExit(Hex2Bin(argv[1], extAddr.m8, OT_EXT_ADDRESS_SIZE) == OT_EXT_ADDRESS_SIZE,
-                             error = OT_ERROR_PARSE);
-
+                SuccessOrExit(error = ParseAsHexString(aArgs[1], extAddr.m8));
                 SuccessOrExit(error = otLinkFilterAddRssIn(mInstance, &extAddr, rss));
             }
         }
-        else if (strcmp(argv[0], "remove") == 0)
+        else if (strcmp(aArgs[0], "remove") == 0)
         {
-            VerifyOrExit(argc == 2, error = OT_ERROR_INVALID_ARGS);
+            VerifyOrExit(aArgsLength == 2, error = OT_ERROR_INVALID_ARGS);
 
-            if (strcmp(argv[1], "*") == 0)
+            if (strcmp(aArgs[1], "*") == 0)
             {
-                SuccessOrExit(error = otLinkFilterRemoveRssIn(mInstance, NULL));
+                otLinkFilterClearDefaultRssIn(mInstance);
             }
             else
             {
-                VerifyOrExit(Hex2Bin(argv[1], extAddr.m8, OT_EXT_ADDRESS_SIZE) == OT_EXT_ADDRESS_SIZE,
-                             error = OT_ERROR_PARSE);
-
-                SuccessOrExit(error = otLinkFilterRemoveRssIn(mInstance, &extAddr));
+                SuccessOrExit(error = ParseAsHexString(aArgs[1], extAddr.m8));
+                otLinkFilterRemoveRssIn(mInstance, &extAddr);
             }
         }
-        else if (strcmp(argv[0], "clear") == 0)
+        else if (strcmp(aArgs[0], "clear") == 0)
         {
-            otLinkFilterClearRssIn(mInstance);
+            otLinkFilterClearAllRssIn(mInstance);
         }
         else
         {
-            error = OT_ERROR_INVALID_ARGS;
+            error = OT_ERROR_INVALID_COMMAND;
         }
     }
 
@@ -3827,142 +4673,229 @@ exit:
     return error;
 }
 
-#endif // OTDLL
+#endif // OPENTHREAD_CONFIG_MAC_FILTER_ENABLE
 
-#endif // OPENTHREAD_ENABLE_MAC_FILTER
-
-#if OPENTHREAD_ENABLE_DIAG
-void Interpreter::ProcessDiag(int argc, char *argv[])
+otError Interpreter::ProcessMac(uint8_t aArgsLength, char *aArgs[])
 {
-    char output[OPENTHREAD_CONFIG_DIAG_OUTPUT_BUFFER_SIZE];
+    otError error = OT_ERROR_NONE;
 
-    // all diagnostics related features are processed within diagnostics module
-    output[sizeof(output) - 1] = '\0';
-    otDiagProcessCmd(argc, argv, output, sizeof(output) - 1);
-    mServer->Output(output, static_cast<uint16_t>(strlen(output)));
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
+
+    if (strcmp(aArgs[0], "retries") == 0)
+    {
+        error = ProcessMacRetries(aArgsLength - 1, aArgs + 1);
+    }
+#if OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE
+    else if (strcmp(aArgs[0], "send") == 0)
+    {
+        error = ProcessMacSend(aArgsLength - 1, aArgs + 1);
+    }
+#endif
+    else
+    {
+        error = OT_ERROR_INVALID_COMMAND;
+    }
+
+exit:
+    return error;
+}
+
+otError Interpreter::ProcessMacRetries(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    VerifyOrExit(aArgsLength > 0 && aArgsLength <= 2, error = OT_ERROR_INVALID_ARGS);
+
+    if (strcmp(aArgs[0], "direct") == 0)
+    {
+        if (aArgsLength == 1)
+        {
+            OutputLine("%d", otLinkGetMaxFrameRetriesDirect(mInstance));
+        }
+        else
+        {
+            uint8_t retries;
+
+            SuccessOrExit(error = ParseAsUint8(aArgs[1], retries));
+            otLinkSetMaxFrameRetriesDirect(mInstance, retries);
+        }
+    }
+#if OPENTHREAD_FTD
+    else if (strcmp(aArgs[0], "indirect") == 0)
+    {
+        if (aArgsLength == 1)
+        {
+            OutputLine("%d", otLinkGetMaxFrameRetriesIndirect(mInstance));
+        }
+        else
+        {
+            uint8_t retries;
+
+            SuccessOrExit(error = ParseAsUint8(aArgs[1], retries));
+            otLinkSetMaxFrameRetriesIndirect(mInstance, retries);
+        }
+    }
+#endif
+    else
+    {
+        error = OT_ERROR_INVALID_ARGS;
+    }
+
+exit:
+    return error;
+}
+
+#if OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE
+otError Interpreter::ProcessMacSend(uint8_t aArgsLength, char *aArgs[])
+{
+    otError error = OT_ERROR_INVALID_ARGS;
+
+    VerifyOrExit(aArgsLength == 1);
+
+    if (strcmp(aArgs[0], "datarequest") == 0)
+    {
+        error = otLinkSendDataRequest(mInstance);
+    }
+    else if (strcmp(aArgs[0], "emptydata") == 0)
+    {
+        error = otLinkSendEmptyData(mInstance);
+    }
+
+exit:
+    return error;
 }
 #endif
 
-void Interpreter::ProcessLine(char *aBuf, uint16_t aBufLength, Server &aServer)
+#if OPENTHREAD_CONFIG_DIAG_ENABLE
+otError Interpreter::ProcessDiag(uint8_t aArgsLength, char *aArgs[])
 {
-    char *  argv[kMaxArgs] = {NULL};
-    char *  cmd;
-    uint8_t argc = 0, i = 0;
+    otError error;
+    char    output[OPENTHREAD_CONFIG_DIAG_OUTPUT_BUFFER_SIZE];
 
-    mServer = &aServer;
+    // all diagnostics related features are processed within diagnostics module
+    output[0]                  = '\0';
+    output[sizeof(output) - 1] = '\0';
 
-    VerifyOrExit(aBuf != NULL && strnlen(aBuf, aBufLength + 1) <= aBufLength);
+    error = otDiagProcessCmd(mInstance, aArgsLength, aArgs, output, sizeof(output) - 1);
+    Output(output, static_cast<uint16_t>(strlen(output)));
 
-    VerifyOrExit(Utils::CmdLineParser::ParseCmd(aBuf, argc, argv, kMaxArgs) == OT_ERROR_NONE,
-                 mServer->OutputFormat("Error: too many args (max %d)\r\n", kMaxArgs));
-    VerifyOrExit(argc >= 1, mServer->OutputFormat("Error: no given command.\r\n"));
-
-    cmd = argv[0];
-
-#if OPENTHREAD_ENABLE_DIAG
-    VerifyOrExit(
-        (!otDiagIsEnabled() || (strcmp(cmd, "diag") == 0)),
-        mServer->OutputFormat("under diagnostics mode, execute 'diag stop' before running any other commands.\r\n"));
+    return error;
+}
 #endif
 
-    for (i = 0; i < OT_ARRAY_LENGTH(sCommands); i++)
+void Interpreter::ProcessLine(char *aBuf)
+{
+    char *         args[kMaxArgs] = {nullptr};
+    uint8_t        argsLength;
+    const Command *command;
+
+    VerifyOrExit(aBuf != nullptr && StringLength(aBuf, kMaxLineLength) <= kMaxLineLength - 1);
+
+    VerifyOrExit(Utils::CmdLineParser::ParseCmd(aBuf, argsLength, args, kMaxArgs) == OT_ERROR_NONE,
+                 OutputLine("Error: too many args (max %d)", kMaxArgs));
+    VerifyOrExit(argsLength >= 1);
+
+#if OPENTHREAD_CONFIG_DIAG_ENABLE
+    VerifyOrExit((!otDiagIsEnabled(mInstance) || (strcmp(args[0], "diag") == 0)),
+                 OutputLine("under diagnostics mode, execute 'diag stop' before running any other commands."));
+#endif
+
+    command = Utils::LookupTable::Find(args[0], sCommands);
+
+    if (command != nullptr)
     {
-        if (strcmp(cmd, sCommands[i].mName) == 0)
+        OutputResult((this->*command->mHandler)(argsLength - 1, &args[1]));
+        ExitNow();
+    }
+
+    // Check user defined commands if built-in command has not been found
+    for (uint8_t i = 0; i < mUserCommandsLength; i++)
+    {
+        if (strcmp(args[0], mUserCommands[i].mName) == 0)
         {
-            (this->*sCommands[i].mCommand)(argc - 1, &argv[1]);
-            break;
+            mUserCommands[i].mCommand(mUserCommandsContext, argsLength - 1, &args[1]);
+            ExitNow();
         }
     }
 
-    // Check user defined commands if built-in command
-    // has not been found
-    if (i == OT_ARRAY_LENGTH(sCommands))
-    {
-        for (i = 0; i < mUserCommandsLength; i++)
-        {
-            if (strcmp(cmd, mUserCommands[i].mName) == 0)
-            {
-                mUserCommands[i].mCommand(argc - 1, &argv[1]);
-                break;
-            }
-        }
-
-        if (i == mUserCommandsLength)
-        {
-            AppendResult(OT_ERROR_PARSE);
-        }
-    }
+    OutputResult(OT_ERROR_INVALID_COMMAND);
 
 exit:
     return;
 }
 
-#if OPENTHREAD_FTD || OPENTHREAD_ENABLE_MTD_NETWORK_DIAGNOSTIC
-void Interpreter::ProcessNetworkDiagnostic(int argc, char *argv[])
+#if OPENTHREAD_FTD || OPENTHREAD_CONFIG_TMF_NETWORK_DIAG_MTD_ENABLE
+otError Interpreter::ProcessNetworkDiagnostic(uint8_t aArgsLength, char *aArgs[])
 {
-    otError             error = OT_ERROR_NONE;
-    struct otIp6Address address;
-    uint8_t             tlvTypes[OT_NETWORK_DIAGNOSTIC_TYPELIST_MAX_ENTRIES];
-    uint8_t             count     = 0;
-    uint8_t             argvIndex = 0;
+    otError      error = OT_ERROR_NONE;
+    otIp6Address address;
+    uint8_t      tlvTypes[OT_NETWORK_DIAGNOSTIC_TYPELIST_MAX_ENTRIES];
+    uint8_t      count     = 0;
+    uint8_t      argsIndex = 0;
 
     // Include operation, address and type tlv list.
-    VerifyOrExit(argc > 2, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength > 2, error = OT_ERROR_INVALID_ARGS);
 
-    SuccessOrExit(error = otIp6AddressFromString(argv[1], &address));
+    SuccessOrExit(error = ParseAsIp6Address(aArgs[1], address));
 
-    argvIndex = 2;
+    argsIndex = 2;
 
-    while (argvIndex < argc && count < sizeof(tlvTypes))
+    while (argsIndex < aArgsLength && count < sizeof(tlvTypes))
     {
-        long value;
-        SuccessOrExit(error = ParseLong(argv[argvIndex++], value));
-        tlvTypes[count++] = static_cast<uint8_t>(value);
+        SuccessOrExit(error = ParseAsUint8(aArgs[argsIndex++], tlvTypes[count++]));
     }
 
-    if (strcmp(argv[0], "get") == 0)
+    if (strcmp(aArgs[0], "get") == 0)
     {
-        otThreadSendDiagnosticGet(mInstance, &address, tlvTypes, count);
-        ExitNow();
+        SuccessOrExit(error = otThreadSendDiagnosticGet(mInstance, &address, tlvTypes, count,
+                                                        &Interpreter::HandleDiagnosticGetResponse, this));
+        ExitNow(error = OT_ERROR_PENDING);
     }
-    else if (strcmp(argv[0], "reset") == 0)
+    else if (strcmp(aArgs[0], "reset") == 0)
     {
-        otThreadSendDiagnosticReset(mInstance, &address, tlvTypes, count);
-        AppendResult(OT_ERROR_NONE);
+        IgnoreError(otThreadSendDiagnosticReset(mInstance, &address, tlvTypes, count));
     }
     else
     {
-        ExitNow(error = OT_ERROR_INVALID_ARGS);
+        error = OT_ERROR_INVALID_COMMAND;
     }
 
 exit:
-    if (error != OT_ERROR_NONE)
-    {
-        AppendResult(error);
-    }
+    return error;
 }
-#endif // OPENTHREAD_FTD || OPENTHREAD_ENABLE_MTD_NETWORK_DIAGNOSTIC
 
-#ifndef OTDLL
-void Interpreter::s_HandleDiagnosticGetResponse(otMessage *aMessage, const otMessageInfo *aMessageInfo, void *aContext)
+void Interpreter::HandleDiagnosticGetResponse(otError              aError,
+                                              otMessage *          aMessage,
+                                              const otMessageInfo *aMessageInfo,
+                                              void *               aContext)
 {
     static_cast<Interpreter *>(aContext)->HandleDiagnosticGetResponse(
-        *static_cast<Message *>(aMessage), *static_cast<const Ip6::MessageInfo *>(aMessageInfo));
+        aError, aMessage, static_cast<const Ip6::MessageInfo *>(aMessageInfo));
 }
 
-void Interpreter::HandleDiagnosticGetResponse(Message &aMessage, const Ip6::MessageInfo &)
+void Interpreter::HandleDiagnosticGetResponse(otError                 aError,
+                                              const otMessage *       aMessage,
+                                              const Ip6::MessageInfo *aMessageInfo)
 {
-    uint8_t  buf[16];
-    uint16_t bytesToPrint;
-    uint16_t bytesPrinted = 0;
-    uint16_t length       = aMessage.GetLength() - aMessage.GetOffset();
+    uint8_t               buf[16];
+    uint16_t              bytesToPrint;
+    uint16_t              bytesPrinted = 0;
+    uint16_t              length;
+    otNetworkDiagTlv      diagTlv;
+    otNetworkDiagIterator iterator = OT_NETWORK_DIAGNOSTIC_ITERATOR_INIT;
 
-    mServer->OutputFormat("DIAG_GET.rsp/ans: ");
+    SuccessOrExit(aError);
+
+    OutputFormat("DIAG_GET.rsp/ans from ");
+    OutputIp6Address(aMessageInfo->mPeerAddr);
+    OutputFormat(": ");
+
+    length = otMessageGetLength(aMessage) - otMessageGetOffset(aMessage);
 
     while (length > 0)
     {
         bytesToPrint = (length < sizeof(buf)) ? length : sizeof(buf);
-        aMessage.Read(aMessage.GetOffset() + bytesPrinted, bytesToPrint, buf);
+        otMessageRead(aMessage, otMessageGetOffset(aMessage) + bytesPrinted, buf, bytesToPrint);
 
         OutputBytes(buf, static_cast<uint8_t>(bytesToPrint));
 
@@ -3970,54 +4903,310 @@ void Interpreter::HandleDiagnosticGetResponse(Message &aMessage, const Ip6::Mess
         bytesPrinted += bytesToPrint;
     }
 
-    mServer->OutputFormat("\r\n");
+    OutputLine("");
+
+    // Output Network Diagnostic TLV values in standard YAML format.
+    while ((aError = otThreadGetNextDiagnosticTlv(aMessage, &iterator, &diagTlv)) == OT_ERROR_NONE)
+    {
+        switch (diagTlv.mType)
+        {
+        case OT_NETWORK_DIAGNOSTIC_TLV_EXT_ADDRESS:
+            OutputFormat("Ext Address: '");
+            OutputExtAddress(diagTlv.mData.mExtAddress);
+            OutputLine("'");
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_SHORT_ADDRESS:
+            OutputLine("Rloc16: 0x%04x", diagTlv.mData.mAddr16);
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_MODE:
+            OutputLine("Mode:");
+            OutputMode(kIndentSize, diagTlv.mData.mMode);
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_TIMEOUT:
+            OutputLine("Timeout: %u", diagTlv.mData.mTimeout);
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_CONNECTIVITY:
+            OutputLine("Connectivity:");
+            OutputConnectivity(kIndentSize, diagTlv.mData.mConnectivity);
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_ROUTE:
+            OutputLine("Route:");
+            OutputRoute(kIndentSize, diagTlv.mData.mRoute);
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_LEADER_DATA:
+            OutputLine("Leader Data:");
+            OutputLeaderData(kIndentSize, diagTlv.mData.mLeaderData);
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_NETWORK_DATA:
+            OutputFormat("Network Data: '");
+            OutputBytes(diagTlv.mData.mNetworkData.m8, diagTlv.mData.mNetworkData.mCount);
+            OutputLine("'");
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_IP6_ADDR_LIST:
+            OutputLine("IP6 Address List:");
+            for (uint16_t i = 0; i < diagTlv.mData.mIp6AddrList.mCount; ++i)
+            {
+                OutputFormat(kIndentSize, "- ");
+                OutputIp6Address(diagTlv.mData.mIp6AddrList.mList[i]);
+                OutputLine("");
+            }
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_MAC_COUNTERS:
+            OutputLine("MAC Counters:");
+            OutputNetworkDiagMacCounters(kIndentSize, diagTlv.mData.mMacCounters);
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_BATTERY_LEVEL:
+            OutputLine("Battery Level: %u%%", diagTlv.mData.mBatteryLevel);
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_SUPPLY_VOLTAGE:
+            OutputLine("Supply Voltage: %umV", diagTlv.mData.mSupplyVoltage);
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_CHILD_TABLE:
+            OutputLine("Child Table:");
+            for (uint16_t i = 0; i < diagTlv.mData.mChildTable.mCount; ++i)
+            {
+                OutputFormat(kIndentSize, "- ");
+                OutputChildTableEntry(kIndentSize + 2, diagTlv.mData.mChildTable.mTable[i]);
+            }
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_CHANNEL_PAGES:
+            OutputFormat("Channel Pages: '");
+            OutputBytes(diagTlv.mData.mChannelPages.m8, diagTlv.mData.mChannelPages.mCount);
+            OutputLine("'");
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_MAX_CHILD_TIMEOUT:
+            OutputLine("Max Child Timeout: %u", diagTlv.mData.mMaxChildTimeout);
+            break;
+        }
+    }
+
+    if (aError == OT_ERROR_NOT_FOUND)
+    {
+        aError = OT_ERROR_NONE;
+    }
+
+exit:
+    OutputResult(aError);
 }
+
+void Interpreter::OutputMode(uint8_t aIndentSize, const otLinkModeConfig &aMode)
+{
+    OutputLine(aIndentSize, "RxOnWhenIdle: %d", aMode.mRxOnWhenIdle);
+    OutputLine(aIndentSize, "DeviceType: %d", aMode.mDeviceType);
+    OutputLine(aIndentSize, "NetworkData: %d", aMode.mNetworkData);
+}
+
+void Interpreter::OutputConnectivity(uint8_t aIndentSize, const otNetworkDiagConnectivity &aConnectivity)
+{
+    OutputLine(aIndentSize, "ParentPriority: %d", aConnectivity.mParentPriority);
+    OutputLine(aIndentSize, "LinkQuality3: %u", aConnectivity.mLinkQuality3);
+    OutputLine(aIndentSize, "LinkQuality2: %u", aConnectivity.mLinkQuality2);
+    OutputLine(aIndentSize, "LinkQuality1: %u", aConnectivity.mLinkQuality1);
+    OutputLine(aIndentSize, "LeaderCost: %u", aConnectivity.mLeaderCost);
+    OutputLine(aIndentSize, "IdSequence: %u", aConnectivity.mIdSequence);
+    OutputLine(aIndentSize, "ActiveRouters: %u", aConnectivity.mActiveRouters);
+    OutputLine(aIndentSize, "SedBufferSize: %u", aConnectivity.mSedBufferSize);
+    OutputLine(aIndentSize, "SedDatagramCount: %u", aConnectivity.mSedDatagramCount);
+}
+void Interpreter::OutputRoute(uint8_t aIndentSize, const otNetworkDiagRoute &aRoute)
+{
+    OutputLine(aIndentSize, "IdSequence: %u", aRoute.mIdSequence);
+    OutputLine(aIndentSize, "RouteData:");
+
+    aIndentSize += kIndentSize;
+    for (uint16_t i = 0; i < aRoute.mRouteCount; ++i)
+    {
+        OutputFormat(aIndentSize, "- ");
+        OutputRouteData(aIndentSize + 2, aRoute.mRouteData[i]);
+    }
+}
+
+void Interpreter::OutputRouteData(uint8_t aIndentSize, const otNetworkDiagRouteData &aRouteData)
+{
+    OutputLine("RouteId: 0x%02x", aRouteData.mRouterId);
+
+    OutputLine(aIndentSize, "LinkQualityOut: %u", aRouteData.mLinkQualityOut);
+    OutputLine(aIndentSize, "LinkQualityIn: %u", aRouteData.mLinkQualityIn);
+    OutputLine(aIndentSize, "RouteCost: %u", aRouteData.mRouteCost);
+}
+
+void Interpreter::OutputLeaderData(uint8_t aIndentSize, const otLeaderData &aLeaderData)
+{
+    OutputLine(aIndentSize, "PartitionId: 0x%08x", aLeaderData.mPartitionId);
+    OutputLine(aIndentSize, "Weighting: %u", aLeaderData.mWeighting);
+    OutputLine(aIndentSize, "DataVersion: %u", aLeaderData.mDataVersion);
+    OutputLine(aIndentSize, "StableDataVersion: %u", aLeaderData.mStableDataVersion);
+    OutputLine(aIndentSize, "LeaderRouterId: 0x%02x", aLeaderData.mLeaderRouterId);
+}
+
+void Interpreter::OutputNetworkDiagMacCounters(uint8_t aIndentSize, const otNetworkDiagMacCounters &aMacCounters)
+{
+    OutputLine(aIndentSize, "IfInUnknownProtos: %u", aMacCounters.mIfInUnknownProtos);
+    OutputLine(aIndentSize, "IfInErrors: %u", aMacCounters.mIfInErrors);
+    OutputLine(aIndentSize, "IfOutErrors: %u", aMacCounters.mIfOutErrors);
+    OutputLine(aIndentSize, "IfInUcastPkts: %u", aMacCounters.mIfInUcastPkts);
+    OutputLine(aIndentSize, "IfInBroadcastPkts: %u", aMacCounters.mIfInBroadcastPkts);
+    OutputLine(aIndentSize, "IfInDiscards: %u", aMacCounters.mIfInDiscards);
+    OutputLine(aIndentSize, "IfOutUcastPkts: %u", aMacCounters.mIfOutUcastPkts);
+    OutputLine(aIndentSize, "IfOutBroadcastPkts: %u", aMacCounters.mIfOutBroadcastPkts);
+    OutputLine(aIndentSize, "IfOutDiscards: %u", aMacCounters.mIfOutDiscards);
+}
+
+void Interpreter::OutputChildTableEntry(uint8_t aIndentSize, const otNetworkDiagChildEntry &aChildEntry)
+{
+    OutputLine("ChildId: 0x%04x", aChildEntry.mChildId);
+
+    OutputLine(aIndentSize, "Timeout: %u", aChildEntry.mTimeout);
+    OutputLine(aIndentSize, "Mode:");
+    OutputMode(aIndentSize + kIndentSize, aChildEntry.mMode);
+}
+#endif // OPENTHREAD_FTD || OPENTHREAD_CONFIG_TMF_NETWORK_DIAG_MTD_ENABLE
+
+void Interpreter::SetUserCommands(const otCliCommand *aCommands, uint8_t aLength, void *aContext)
+{
+    mUserCommands        = aCommands;
+    mUserCommandsLength  = aLength;
+    mUserCommandsContext = aContext;
+}
+
+Interpreter &Interpreter::GetOwner(InstanceLocator &aInstanceLocator)
+{
+    OT_UNUSED_VARIABLE(aInstanceLocator);
+    return Interpreter::GetInterpreter();
+}
+
+void Interpreter::SignalPingRequest(const Ip6::Address &aPeerAddress,
+                                    uint16_t            aPingLength,
+                                    uint32_t            aTimestamp,
+                                    uint8_t             aHopLimit)
+{
+    OT_UNUSED_VARIABLE(aPeerAddress);
+    OT_UNUSED_VARIABLE(aPingLength);
+    OT_UNUSED_VARIABLE(aTimestamp);
+    OT_UNUSED_VARIABLE(aHopLimit);
+
+#if OPENTHREAD_CONFIG_OTNS_ENABLE
+    mInstance->Get<Utils::Otns>().EmitPingRequest(aPeerAddress, aPingLength, aTimestamp, aHopLimit);
 #endif
-
-void Interpreter::SetUserCommands(const otCliCommand *aCommands, uint8_t aLength)
-{
-    mUserCommands       = aCommands;
-    mUserCommandsLength = aLength;
 }
 
-Interpreter &Interpreter::GetOwner(OwnerLocator &aOwnerLocator)
+void Interpreter::SignalPingReply(const Ip6::Address &aPeerAddress,
+                                  uint16_t            aPingLength,
+                                  uint32_t            aTimestamp,
+                                  uint8_t             aHopLimit)
 {
-#if OPENTHREAD_ENABLE_MULTIPLE_INSTANCES
-    Interpreter &interpreter = (aOwnerLocator.GetOwner<Interpreter>());
-#else
-    OT_UNUSED_VARIABLE(aOwnerLocator);
+    OT_UNUSED_VARIABLE(aPeerAddress);
+    OT_UNUSED_VARIABLE(aPingLength);
+    OT_UNUSED_VARIABLE(aTimestamp);
+    OT_UNUSED_VARIABLE(aHopLimit);
 
-    Interpreter &interpreter = Server::sServer->GetInterpreter();
+#if OPENTHREAD_CONFIG_OTNS_ENABLE
+    mInstance->Get<Utils::Otns>().EmitPingReply(aPeerAddress, aPingLength, aTimestamp, aHopLimit);
 #endif
-    return interpreter;
 }
 
-extern "C" void otCliSetUserCommands(const otCliCommand *aUserCommands, uint8_t aLength)
+void Interpreter::HandleDiscoveryRequest(const otThreadDiscoveryRequestInfo &aInfo)
 {
-    Server::sServer->GetInterpreter().SetUserCommands(aUserCommands, aLength);
+    OutputFormat("~ Discovery Request from ");
+    OutputExtAddress(aInfo.mExtAddress);
+    OutputLine(": version=%u,joiner=%d", aInfo.mVersion, aInfo.mIsJoiner);
+}
+
+int Interpreter::OutputFormat(const char *aFormat, ...)
+{
+    int     rval;
+    va_list ap;
+
+    va_start(ap, aFormat);
+    rval = OutputFormatV(aFormat, ap);
+    va_end(ap);
+
+    return rval;
+}
+
+void Interpreter::OutputFormat(uint8_t aIndentSize, const char *aFormat, ...)
+{
+    va_list ap;
+
+    OutputSpaces(aIndentSize);
+
+    va_start(ap, aFormat);
+    OutputFormatV(aFormat, ap);
+    va_end(ap);
+}
+
+void Interpreter::OutputLine(const char *aFormat, ...)
+{
+    va_list args;
+
+    va_start(args, aFormat);
+    OutputFormatV(aFormat, args);
+    va_end(args);
+
+    OutputFormat("\r\n");
+}
+
+void Interpreter::OutputLine(uint8_t aIndentSize, const char *aFormat, ...)
+{
+    va_list args;
+
+    OutputSpaces(aIndentSize);
+
+    va_start(args, aFormat);
+    OutputFormatV(aFormat, args);
+    va_end(args);
+
+    OutputFormat("\r\n");
+}
+
+void Interpreter::OutputSpaces(uint8_t aCount)
+{
+    static const char kSpaces[] = {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '};
+
+    while (aCount > 0)
+    {
+        uint8_t len = OT_MIN(aCount, sizeof(kSpaces));
+
+        Output(kSpaces, len);
+        aCount -= len;
+    }
+}
+
+int Interpreter::OutputFormatV(const char *aFormat, va_list aArguments)
+{
+    char buf[kMaxLineLength];
+
+    vsnprintf(buf, sizeof(buf), aFormat, aArguments);
+
+    return Output(buf, static_cast<uint16_t>(strlen(buf)));
+}
+
+extern "C" void otCliSetUserCommands(const otCliCommand *aUserCommands, uint8_t aLength, void *aContext)
+{
+    Interpreter::GetInterpreter().SetUserCommands(aUserCommands, aLength, aContext);
 }
 
 extern "C" void otCliOutputBytes(const uint8_t *aBytes, uint8_t aLength)
 {
-    Server::sServer->GetInterpreter().OutputBytes(aBytes, aLength);
+    Interpreter::GetInterpreter().OutputBytes(aBytes, aLength);
 }
 
 extern "C" void otCliOutputFormat(const char *aFmt, ...)
 {
     va_list aAp;
     va_start(aAp, aFmt);
-    Server::sServer->OutputFormatV(aFmt, aAp);
+    Interpreter::GetInterpreter().OutputFormatV(aFmt, aAp);
     va_end(aAp);
 }
 
 extern "C" void otCliOutput(const char *aString, uint16_t aLength)
 {
-    Server::sServer->Output(aString, aLength);
+    Interpreter::GetInterpreter().Output(aString, aLength);
 }
 
 extern "C" void otCliAppendResult(otError aError)
 {
-    Server::sServer->GetInterpreter().AppendResult(aError);
+    Interpreter::GetInterpreter().OutputResult(aError);
 }
 
 extern "C" void otCliPlatLogv(otLogLevel aLogLevel, otLogRegion aLogRegion, const char *aFormat, va_list aArgs)
@@ -4025,10 +5214,21 @@ extern "C" void otCliPlatLogv(otLogLevel aLogLevel, otLogRegion aLogRegion, cons
     OT_UNUSED_VARIABLE(aLogLevel);
     OT_UNUSED_VARIABLE(aLogRegion);
 
-    VerifyOrExit(Server::sServer != NULL);
+    VerifyOrExit(Interpreter::IsInitialized());
 
-    Server::sServer->OutputFormatV(aFormat, aArgs);
-    Server::sServer->OutputFormat("\r\n");
+    Interpreter::GetInterpreter().OutputFormatV(aFormat, aArgs);
+    Interpreter::GetInterpreter().OutputLine("");
+exit:
+    return;
+}
+
+extern "C" void otCliPlatLogLine(otLogLevel aLogLevel, otLogRegion aLogRegion, const char *aLogLine)
+{
+    OT_UNUSED_VARIABLE(aLogLevel);
+    OT_UNUSED_VARIABLE(aLogRegion);
+
+    VerifyOrExit(Interpreter::IsInitialized());
+    Interpreter::GetInterpreter().OutputLine(aLogLine);
 
 exit:
     return;
@@ -4036,3 +5236,20 @@ exit:
 
 } // namespace Cli
 } // namespace ot
+
+#if OPENTHREAD_CONFIG_LEGACY_ENABLE
+OT_TOOL_WEAK void otNcpRegisterLegacyHandlers(const otNcpLegacyHandlers *aHandlers)
+{
+    OT_UNUSED_VARIABLE(aHandlers);
+}
+
+OT_TOOL_WEAK void otNcpHandleDidReceiveNewLegacyUlaPrefix(const uint8_t *aUlaPrefix)
+{
+    OT_UNUSED_VARIABLE(aUlaPrefix);
+}
+
+OT_TOOL_WEAK void otNcpHandleLegacyNodeDidJoin(const otExtAddress *aExtAddr)
+{
+    OT_UNUSED_VARIABLE(aExtAddr);
+}
+#endif

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2018, The OpenThread Authors.
 #  All rights reserved.
@@ -38,212 +38,251 @@ import socket
 import asyncore
 import inspect
 
-#----------------------------------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------------------------------
 # wpantund properties
 
-WPAN_STATE                                     = 'NCP:State'
-WPAN_NAME                                      = 'Network:Name'
-WPAN_PANID                                     = 'Network:PANID'
-WPAN_XPANID                                    = 'Network:XPANID'
-WPAN_KEY                                       = 'Network:Key'
-WPAN_KEY_INDEX                                 = 'Network:KeyIndex'
-WPAN_CHANNEL                                   = 'NCP:Channel'
-WPAN_HW_ADDRESS                                = 'NCP:HardwareAddress'
-WPAN_EXT_ADDRESS                               = 'NCP:ExtendedAddress'
-WPAN_POLL_INTERVAL                             = 'NCP:SleepyPollInterval'
-WPAN_NODE_TYPE                                 = 'Network:NodeType'
-WPAN_ROLE                                      = 'Network:Role'
-WPAN_PARTITION_ID                              = 'Network:PartitionId'
-WPAN_NCP_VERSION                               = 'NCP:Version'
-WPAN_NCP_MCU_POWER_STATE                       = "NCP:MCUPowerState"
-WPAN_NETWORK_ALLOW_JOIN                        = 'com.nestlabs.internal:Network:AllowingJoin'
-WPAN_NETWORK_PASSTHRU_PORT                     = 'com.nestlabs.internal:Network:PassthruPort'
+WPAN_STATE = 'NCP:State'
+WPAN_NAME = 'Network:Name'
+WPAN_PANID = 'Network:PANID'
+WPAN_XPANID = 'Network:XPANID'
+WPAN_KEY = 'Network:Key'
+WPAN_KEY_INDEX = 'Network:KeyIndex'
+WPAN_CHANNEL = 'NCP:Channel'
+WPAN_HW_ADDRESS = 'NCP:HardwareAddress'
+WPAN_EXT_ADDRESS = 'NCP:ExtendedAddress'
+WPAN_POLL_INTERVAL = 'NCP:SleepyPollInterval'
+WPAN_NODE_TYPE = 'Network:NodeType'
+WPAN_ROLE = 'Network:Role'
+WPAN_PARTITION_ID = 'Network:PartitionId'
+WPAN_NCP_VERSION = 'NCP:Version'
+WPAN_NCP_MCU_POWER_STATE = "NCP:MCUPowerState"
+WPAN_NETWORK_ALLOW_JOIN = 'com.nestlabs.internal:Network:AllowingJoin'
+WPAN_NETWORK_PASSTHRU_PORT = 'com.nestlabs.internal:Network:PassthruPort'
+WPAN_RCP_VERSION = "POSIXApp:RCPVersion"
 
-WPAN_IP6_LINK_LOCAL_ADDRESS                    = "IPv6:LinkLocalAddress"
-WPAN_IP6_MESH_LOCAL_ADDRESS                    = "IPv6:MeshLocalAddress"
-WPAN_IP6_MESH_LOCAL_PREFIX                     = "IPv6:MeshLocalPrefix"
-WPAN_IP6_ALL_ADDRESSES                         = "IPv6:AllAddresses"
-WPAN_IP6_MULTICAST_ADDRESSES                   = "IPv6:MulticastAddresses"
+WPAN_IP6_LINK_LOCAL_ADDRESS = "IPv6:LinkLocalAddress"
+WPAN_IP6_MESH_LOCAL_ADDRESS = "IPv6:MeshLocalAddress"
+WPAN_IP6_MESH_LOCAL_PREFIX = "IPv6:MeshLocalPrefix"
+WPAN_IP6_ALL_ADDRESSES = "IPv6:AllAddresses"
+WPAN_IP6_MULTICAST_ADDRESSES = "IPv6:MulticastAddresses"
+WPAN_IP6_INTERFACE_ROUTES = "IPv6:Routes"
 
-WPAN_THREAD_RLOC16                             = "Thread:RLOC16"
-WPAN_THREAD_ROUTER_ID                          = "Thread:RouterID"
-WPAN_THREAD_LEADER_ADDRESS                     = "Thread:Leader:Address"
-WPAN_THREAD_LEADER_ROUTER_ID                   = "Thread:Leader:RouterID"
-WPAN_THREAD_LEADER_WEIGHT                      = "Thread:Leader:Weight"
-WPAN_THREAD_LEADER_LOCAL_WEIGHT                = "Thread:Leader:LocalWeight"
-WPAN_THREAD_LEADER_NETWORK_DATA                = "Thread:Leader:NetworkData"
-WPAN_THREAD_STABLE_LEADER_NETWORK_DATA         = "Thread:Leader:StableNetworkData"
-WPAN_THREAD_NETWORK_DATA                       = "Thread:NetworkData"
-WPAN_THREAD_CHILD_TABLE                        = "Thread:ChildTable"
-WPAN_THREAD_CHILD_TABLE_ASVALMAP               = "Thread:ChildTable:AsValMap"
-WPAN_THREAD_CHILD_TABLE_ADDRESSES              = "Thread:ChildTable:Addresses"
-WPAN_THREAD_NEIGHBOR_TABLE                     = "Thread:NeighborTable"
-WPAN_THREAD_NEIGHBOR_TABLE_ASVALMAP            = "Thread:NeighborTable:AsValMap"
-WPAN_THREAD_NEIGHBOR_TABLE_ERR_RATES           = "Thread:NeighborTable:ErrorRates"
-WPAN_THREAD_NEIGHBOR_TABLE_ERR_RATES_AVVALMAP  = "Thread:NeighborTable:ErrorRates:AsValMap"
-WPAN_THREAD_ROUTER_TABLE                       = "Thread:RouterTable"
-WPAN_THREAD_ROUTER_TABLE_ASVALMAP              = "Thread:RouterTable:AsValMap"
-WPAN_THREAD_CHILD_TIMEOUT                      = "Thread:ChildTimeout"
-WPAN_THREAD_PARENT                             = "Thread:Parent"
-WPAN_THREAD_PARENT_ASVALMAP                    = "Thread:Parent:AsValMap"
-WPAN_THREAD_NETWORK_DATA_VERSION               = "Thread:NetworkDataVersion"
-WPAN_THREAD_STABLE_NETWORK_DATA                = "Thread:StableNetworkData"
-WPAN_THREAD_STABLE_NETWORK_DATA_VERSION        = "Thread:StableNetworkDataVersion"
-WPAN_THREAD_PREFERRED_ROUTER_ID                = "Thread:PreferredRouterID"
-WPAN_THREAD_COMMISSIONER_ENABLED               = "Thread:Commissioner:Enabled"
-WPAN_THREAD_DEVICE_MODE                        = "Thread:DeviceMode"
-WPAN_THREAD_OFF_MESH_ROUTES                    = "Thread:OffMeshRoutes"
-WPAN_THREAD_ON_MESH_PREFIXES                   = "Thread:OnMeshPrefixes"
-WPAN_THREAD_ROUTER_ROLE_ENABLED                = "Thread:RouterRole:Enabled"
-WPAN_THREAD_CONFIG_FILTER_RLOC_ADDRESSES       = "Thread:Config:FilterRLOCAddresses"
-WPAN_THREAD_ROUTER_UPGRADE_THRESHOLD           = "Thread:RouterUpgradeThreshold"
-WPAN_THREAD_ROUTER_DOWNGRADE_THRESHOLD         = "Thread:RouterDowngradeThreshold"
-WPAN_THREAD_ACTIVE_DATASET                     = "Thread:ActiveDataset"
-WPAN_THREAD_ACTIVE_DATASET_ASVALMAP            = "Thread:ActiveDataset:AsValMap"
-WPAN_THREAD_PENDING_DATASET                    = "Thread:PendingDataset"
-WPAN_THREAD_PENDING_DATASET_ASVALMAP           = "Thread:PendingDataset:AsValMap"
-WPAN_THREAD_ADDRESS_CACHE_TABLE                = "Thread:AddressCacheTable"
-WPAN_THREAD_ADDRESS_CACHE_TABLE_ASVALMAP       = "Thread:AddressCacheTable:AsValMap"
+WPAN_DAEMON_OFF_MESH_ROUTE_AUTO_ADD_ON_INTERFACE = "Daemon:OffMeshRoute:AutoAddOnInterface"
+WPAN_DAEMON_OFF_MESH_ROUTE_FILTER_SELF_AUTO_ADDED = "Daemon:OffMeshRoute:FilterSelfAutoAdded"
+WPAN_DAEMON_ON_MESH_PREFIX_AUTO_ADD_AS_INTERFACE_ROUTE = "Daemon:OnMeshPrefix:AutoAddAsInterfaceRoute"
 
-WPAN_OT_LOG_LEVEL                              = "OpenThread:LogLevel"
-WPAN_OT_STEERING_DATA_ADDRESS                  = "OpenThread:SteeringData:Address"
-WPAN_OT_STEERING_DATA_SET_WHEN_JOINABLE        = "OpenThread:SteeringData:SetWhenJoinable"
-WPAN_OT_MSG_BUFFER_COUNTERS                    = "OpenThread:MsgBufferCounters"
-WPAN_OT_MSG_BUFFER_COUNTERS_AS_STRING          = "OpenThread:MsgBufferCounters:AsString"
-WPAN_OT_DEBUG_TEST_ASSERT                      = "OpenThread:Debug:TestAssert"
-WPAN_OT_DEBUG_TEST_WATCHDOG                    = "OpenThread:Debug:TestWatchdog"
+WPAN_THREAD_RLOC16 = "Thread:RLOC16"
+WPAN_THREAD_ROUTER_ID = "Thread:RouterID"
+WPAN_THREAD_LEADER_ADDRESS = "Thread:Leader:Address"
+WPAN_THREAD_LEADER_ROUTER_ID = "Thread:Leader:RouterID"
+WPAN_THREAD_LEADER_WEIGHT = "Thread:Leader:Weight"
+WPAN_THREAD_LEADER_LOCAL_WEIGHT = "Thread:Leader:LocalWeight"
+WPAN_THREAD_LEADER_NETWORK_DATA = "Thread:Leader:NetworkData"
+WPAN_THREAD_STABLE_LEADER_NETWORK_DATA = "Thread:Leader:StableNetworkData"
+WPAN_THREAD_NETWORK_DATA = "Thread:NetworkData"
+WPAN_THREAD_CHILD_TABLE = "Thread:ChildTable"
+WPAN_THREAD_CHILD_TABLE_ASVALMAP = "Thread:ChildTable:AsValMap"
+WPAN_THREAD_CHILD_TABLE_ADDRESSES = "Thread:ChildTable:Addresses"
+WPAN_THREAD_NEIGHBOR_TABLE = "Thread:NeighborTable"
+WPAN_THREAD_NEIGHBOR_TABLE_ASVALMAP = "Thread:NeighborTable:AsValMap"
+WPAN_THREAD_NEIGHBOR_TABLE_ERR_RATES = "Thread:NeighborTable:ErrorRates"
+WPAN_THREAD_NEIGHBOR_TABLE_ERR_RATES_AVVALMAP = "Thread:NeighborTable:ErrorRates:AsValMap"
+WPAN_THREAD_ROUTER_TABLE = "Thread:RouterTable"
+WPAN_THREAD_ROUTER_TABLE_ASVALMAP = "Thread:RouterTable:AsValMap"
+WPAN_THREAD_CHILD_TIMEOUT = "Thread:ChildTimeout"
+WPAN_THREAD_PARENT = "Thread:Parent"
+WPAN_THREAD_PARENT_ASVALMAP = "Thread:Parent:AsValMap"
+WPAN_THREAD_NETWORK_DATA_VERSION = "Thread:NetworkDataVersion"
+WPAN_THREAD_STABLE_NETWORK_DATA = "Thread:StableNetworkData"
+WPAN_THREAD_STABLE_NETWORK_DATA_VERSION = "Thread:StableNetworkDataVersion"
+WPAN_THREAD_PREFERRED_ROUTER_ID = "Thread:PreferredRouterID"
+WPAN_THREAD_COMMISSIONER_ENABLED = "Thread:Commissioner:Enabled"
+WPAN_THREAD_DEVICE_MODE = "Thread:DeviceMode"
+WPAN_THREAD_OFF_MESH_ROUTES = "Thread:OffMeshRoutes"
+WPAN_THREAD_ON_MESH_PREFIXES = "Thread:OnMeshPrefixes"
+WPAN_THREAD_ROUTER_ROLE_ENABLED = "Thread:RouterRole:Enabled"
+WPAN_THREAD_CONFIG_FILTER_RLOC_ADDRESSES = "Thread:Config:FilterRLOCAddresses"
+WPAN_THREAD_ROUTER_UPGRADE_THRESHOLD = "Thread:RouterUpgradeThreshold"
+WPAN_THREAD_ROUTER_DOWNGRADE_THRESHOLD = "Thread:RouterDowngradeThreshold"
+WPAN_THREAD_ACTIVE_DATASET = "Thread:ActiveDataset"
+WPAN_THREAD_ACTIVE_DATASET_ASVALMAP = "Thread:ActiveDataset:AsValMap"
+WPAN_THREAD_PENDING_DATASET = "Thread:PendingDataset"
+WPAN_THREAD_PENDING_DATASET_ASVALMAP = "Thread:PendingDataset:AsValMap"
+WPAN_THREAD_ADDRESS_CACHE_TABLE = "Thread:AddressCacheTable"
+WPAN_THREAD_ADDRESS_CACHE_TABLE_ASVALMAP = "Thread:AddressCacheTable:AsValMap"
+WPAN_THREAD_JOINER_DISCERNER_VALUE = "Joiner:Discerner:Value"
+WPAN_THREAD_JOINER_DISCERNER_BIT_LENGTH = "Joiner:Discerner:BitLength"
+WPAN_THREAD_COMMISSIONER_JOINERS = "Commissioner:Joiners"
 
-WPAN_MAC_WHITELIST_ENABLED                     = "MAC:Whitelist:Enabled"
-WPAN_MAC_WHITELIST_ENTRIES                     = "MAC:Whitelist:Entries"
-WPAN_MAC_WHITELIST_ENTRIES_ASVALMAP            = "MAC:Whitelist:Entries:AsValMap"
-WPAN_MAC_BLACKLIST_ENABLED                     = "MAC:Blacklist:Enabled"
-WPAN_MAC_BLACKLIST_ENTRIES                     = "MAC:Blacklist:Entries"
-WPAN_MAC_BLACKLIST_ENTRIES_ASVALMAP            = "MAC:Blacklist:Entries:AsValMap"
+WPAN_OT_LOG_LEVEL = "OpenThread:LogLevel"
+WPAN_OT_SLAAC_ENABLED = "OpenThread:SLAAC:Enabled"
+WPAN_OT_STEERING_DATA_ADDRESS = "OpenThread:SteeringData:Address"
+WPAN_OT_STEERING_DATA_SET_WHEN_JOINABLE = "OpenThread:SteeringData:SetWhenJoinable"
+WPAN_OT_MSG_BUFFER_COUNTERS = "OpenThread:MsgBufferCounters"
+WPAN_OT_MSG_BUFFER_COUNTERS_AS_STRING = "OpenThread:MsgBufferCounters:AsString"
+WPAN_OT_DEBUG_TEST_ASSERT = "OpenThread:Debug:TestAssert"
+WPAN_OT_DEBUG_TEST_WATCHDOG = "OpenThread:Debug:TestWatchdog"
+WPAN_OT_SUPPORTED_RADIO_LINKS = "OpenThread:SupportedRadioLinks"
+WPAN_OT_NEIGHBOR_TABLE_MULTI_RADIO_INFO = "OpenThread:NeighborTable::MultiRadioInfo"
+WPAN_OT_TREL_TEST_MODE_ENABLE = "OpenThread:Trel:TestMode:Enable"
 
-WPAN_CHILD_SUPERVISION_INTERVAL                = "ChildSupervision:Interval"
-WPAN_CHILD_SUPERVISION_CHECK_TIMEOUT           = "ChildSupervision:CheckTimeout"
+WPAN_MAC_ALLOWLIST_ENABLED = "MAC:Allowlist:Enabled"
+WPAN_MAC_ALLOWLIST_ENTRIES = "MAC:Allowlist:Entries"
+WPAN_MAC_ALLOWLIST_ENTRIES_ASVALMAP = "MAC:Allowlist:Entries:AsValMap"
+WPAN_MAC_DENYLIST_ENABLED = "MAC:Denylist:Enabled"
+WPAN_MAC_DENYLIST_ENTRIES = "MAC:Denylist:Entries"
+WPAN_MAC_DENYLIST_ENTRIES_ASVALMAP = "MAC:Denylist:Entries:AsValMap"
 
-WPAN_JAM_DETECTION_STATUS                      = "JamDetection:Status"
-WPAN_JAM_DETECTION_ENABLE                      = "JamDetection:Enable"
-WPAN_JAM_DETECTION_RSSI_THRESHOLD              = "JamDetection:RssiThreshold"
-WPAN_JAM_DETECTION_WINDOW                      = "JamDetection:Window"
-WPAN_JAM_DETECTION_BUSY_PERIOD                 = "JamDetection:BusyPeriod"
-WPAN_JAM_DETECTION_DEBUG_HISTORY_BITMAP        = "JamDetection:Debug:HistoryBitmap"
+WPAN_MAC_FILTER_FIXED_RSSI = "MAC:Filter:FixedRssi"
+WPAN_MAC_FILTER_ENTRIES = "MAC:Filter:Entries"
+WPAN_MAC_FILTER_ENTRIES_ASVALMAP = "MAC:Filter:Entries:AsValMap"
 
-WPAN_CHANNEL_MONITOR_SAMPLE_INTERVAL           = "ChannelMonitor:SampleInterval"
-WPAN_CHANNEL_MONITOR_RSSI_THRESHOLD            = "ChannelMonitor:RssiThreshold"
-WPAN_CHANNEL_MONITOR_SAMPLE_WINDOW             = "ChannelMonitor:SampleWindow"
-WPAN_CHANNEL_MONITOR_SAMPLE_COUNT              = "ChannelMonitor:SampleCount"
-WPAN_CHANNEL_MONITOR_CHANNEL_QUALITY           = "ChannelMonitor:ChannelQuality"
-WPAN_CHANNEL_MONITOR_CHANNEL_QUALITY_ASVALMAP  = "ChannelMonitor:ChannelQuality:AsValMap"
+WPAN_CHILD_SUPERVISION_INTERVAL = "ChildSupervision:Interval"
+WPAN_CHILD_SUPERVISION_CHECK_TIMEOUT = "ChildSupervision:CheckTimeout"
 
-WPAN_CHANNEL_MANAGER_NEW_CHANNEL               = "ChannelManager:NewChannel"
-WPAN_CHANNEL_MANAGER_DELAY                     = "ChannelManager:Delay"
-WPAN_CHANNEL_MANAGER_CHANNEL_SELECT            = "ChannelManager:ChannelSelect"
-WPAN_CHANNEL_MANAGER_AUTO_SELECT_ENABLED       = "ChannelManager:AutoSelect:Enabled"
-WPAN_CHANNEL_MANAGER_AUTO_SELECT_INTERVAL      = "ChannelManager:AutoSelect:Interval"
-WPAN_CHANNEL_MANAGER_SUPPORTED_CHANNEL_MASK    = "ChannelManager:SupportedChannelMask"
-WPAN_CHANNEL_MANAGER_FAVORED_CHANNEL_MASK      = "ChannelManager:FavoredChannelMask"
+WPAN_JAM_DETECTION_STATUS = "JamDetection:Status"
+WPAN_JAM_DETECTION_ENABLE = "JamDetection:Enable"
+WPAN_JAM_DETECTION_RSSI_THRESHOLD = "JamDetection:RssiThreshold"
+WPAN_JAM_DETECTION_WINDOW = "JamDetection:Window"
+WPAN_JAM_DETECTION_BUSY_PERIOD = "JamDetection:BusyPeriod"
+WPAN_JAM_DETECTION_DEBUG_HISTORY_BITMAP = "JamDetection:Debug:HistoryBitmap"
 
-WPAN_NCP_COUNTER_ALL_MAC                       = "NCP:Counter:AllMac"
-WPAN_NCP_COUNTER_ALL_MAC_ASVALMAP              = "NCP:Counter:AllMac:AsValMap"
-WPAN_NCP_COUNTER_TX_PKT_TOTAL                  = "NCP:Counter:TX_PKT_TOTAL"
-WPAN_NCP_COUNTER_TX_PKT_UNICAST                = "NCP:Counter:TX_PKT_UNICAST"
-WPAN_NCP_COUNTER_TX_PKT_BROADCAST              = "NCP:Counter:TX_PKT_BROADCAST"
-WPAN_NCP_COUNTER_TX_PKT_ACK_REQ                = "NCP:Counter:TX_PKT_ACK_REQ"
-WPAN_NCP_COUNTER_TX_PKT_ACKED                  = "NCP:Counter:TX_PKT_ACKED"
-WPAN_NCP_COUNTER_TX_PKT_NO_ACK_REQ             = "NCP:Counter:TX_PKT_NO_ACK_REQ"
-WPAN_NCP_COUNTER_TX_PKT_DATA                   = "NCP:Counter:TX_PKT_DATA"
-WPAN_NCP_COUNTER_TX_PKT_DATA_POLL              = "NCP:Counter:TX_PKT_DATA_POLL"
-WPAN_NCP_COUNTER_TX_PKT_BEACON                 = "NCP:Counter:TX_PKT_BEACON"
-WPAN_NCP_COUNTER_TX_PKT_BEACON_REQ             = "NCP:Counter:TX_PKT_BEACON_REQ"
-WPAN_NCP_COUNTER_TX_PKT_OTHER                  = "NCP:Counter:TX_PKT_OTHER"
-WPAN_NCP_COUNTER_TX_PKT_RETRY                  = "NCP:Counter:TX_PKT_RETRY"
-WPAN_NCP_COUNTER_TX_ERR_CCA                    = "NCP:Counter:TX_ERR_CCA"
-WPAN_NCP_COUNTER_TX_ERR_ABORT                  = "NCP:Counter:TX_ERR_ABORT"
-WPAN_NCP_COUNTER_RX_PKT_TOTAL                  = "NCP:Counter:RX_PKT_TOTAL"
-WPAN_NCP_COUNTER_RX_PKT_UNICAST                = "NCP:Counter:RX_PKT_UNICAST"
-WPAN_NCP_COUNTER_RX_PKT_BROADCAST              = "NCP:Counter:RX_PKT_BROADCAST"
-WPAN_NCP_COUNTER_RX_PKT_DATA                   = "NCP:Counter:RX_PKT_DATA"
-WPAN_NCP_COUNTER_RX_PKT_DATA_POLL              = "NCP:Counter:RX_PKT_DATA_POLL"
-WPAN_NCP_COUNTER_RX_PKT_BEACON                 = "NCP:Counter:RX_PKT_BEACON"
-WPAN_NCP_COUNTER_RX_PKT_BEACON_REQ             = "NCP:Counter:RX_PKT_BEACON_REQ"
-WPAN_NCP_COUNTER_RX_PKT_OTHER                  = "NCP:Counter:RX_PKT_OTHER"
-WPAN_NCP_COUNTER_RX_PKT_FILT_WL                = "NCP:Counter:RX_PKT_FILT_WL"
-WPAN_NCP_COUNTER_RX_PKT_FILT_DA                = "NCP:Counter:RX_PKT_FILT_DA"
-WPAN_NCP_COUNTER_RX_ERR_EMPTY                  = "NCP:Counter:RX_ERR_EMPTY"
-WPAN_NCP_COUNTER_RX_ERR_UKWN_NBR               = "NCP:Counter:RX_ERR_UKWN_NBR"
-WPAN_NCP_COUNTER_RX_ERR_NVLD_SADDR             = "NCP:Counter:RX_ERR_NVLD_SADDR"
-WPAN_NCP_COUNTER_RX_ERR_SECURITY               = "NCP:Counter:RX_ERR_SECURITY"
-WPAN_NCP_COUNTER_RX_ERR_BAD_FCS                = "NCP:Counter:RX_ERR_BAD_FCS"
-WPAN_NCP_COUNTER_RX_ERR_OTHER                  = "NCP:Counter:RX_ERR_OTHER"
-WPAN_NCP_COUNTER_TX_IP_SEC_TOTAL               = "NCP:Counter:TX_IP_SEC_TOTAL"
-WPAN_NCP_COUNTER_TX_IP_INSEC_TOTAL             = "NCP:Counter:TX_IP_INSEC_TOTAL"
-WPAN_NCP_COUNTER_TX_IP_DROPPED                 = "NCP:Counter:TX_IP_DROPPED"
-WPAN_NCP_COUNTER_RX_IP_SEC_TOTAL               = "NCP:Counter:RX_IP_SEC_TOTAL"
-WPAN_NCP_COUNTER_RX_IP_INSEC_TOTAL             = "NCP:Counter:RX_IP_INSEC_TOTAL"
-WPAN_NCP_COUNTER_RX_IP_DROPPED                 = "NCP:Counter:RX_IP_DROPPED"
-WPAN_NCP_COUNTER_TX_SPINEL_TOTAL               = "NCP:Counter:TX_SPINEL_TOTAL"
-WPAN_NCP_COUNTER_RX_SPINEL_TOTAL               = "NCP:Counter:RX_SPINEL_TOTAL"
-WPAN_NCP_COUNTER_RX_SPINEL_ERR                 = "NCP:Counter:RX_SPINEL_ERR"
-WPAN_NCP_COUNTER_IP_TX_SUCCESS                 = "NCP:Counter:IP_TX_SUCCESS"
-WPAN_NCP_COUNTER_IP_RX_SUCCESS                 = "NCP:Counter:IP_RX_SUCCESS"
-WPAN_NCP_COUNTER_IP_TX_FAILURE                 = "NCP:Counter:IP_TX_FAILURE"
-WPAN_NCP_COUNTER_IP_RX_FAILURE                 = "NCP:Counter:IP_RX_FAILURE"
+WPAN_CHANNEL_MONITOR_SAMPLE_INTERVAL = "ChannelMonitor:SampleInterval"
+WPAN_CHANNEL_MONITOR_RSSI_THRESHOLD = "ChannelMonitor:RssiThreshold"
+WPAN_CHANNEL_MONITOR_SAMPLE_WINDOW = "ChannelMonitor:SampleWindow"
+WPAN_CHANNEL_MONITOR_SAMPLE_COUNT = "ChannelMonitor:SampleCount"
+WPAN_CHANNEL_MONITOR_CHANNEL_QUALITY = "ChannelMonitor:ChannelQuality"
+WPAN_CHANNEL_MONITOR_CHANNEL_QUALITY_ASVALMAP = "ChannelMonitor:ChannelQuality:AsValMap"
 
-#----------------------------------------------------------------------------------------------------------------------
+WPAN_CHANNEL_MANAGER_NEW_CHANNEL = "ChannelManager:NewChannel"
+WPAN_CHANNEL_MANAGER_DELAY = "ChannelManager:Delay"
+WPAN_CHANNEL_MANAGER_CHANNEL_SELECT = "ChannelManager:ChannelSelect"
+WPAN_CHANNEL_MANAGER_AUTO_SELECT_ENABLED = "ChannelManager:AutoSelect:Enabled"
+WPAN_CHANNEL_MANAGER_AUTO_SELECT_INTERVAL = "ChannelManager:AutoSelect:Interval"
+WPAN_CHANNEL_MANAGER_SUPPORTED_CHANNEL_MASK = "ChannelManager:SupportedChannelMask"
+WPAN_CHANNEL_MANAGER_FAVORED_CHANNEL_MASK = "ChannelManager:FavoredChannelMask"
+
+WPAN_NCP_COUNTER_ALL_MAC = "NCP:Counter:AllMac"
+WPAN_NCP_COUNTER_ALL_MAC_ASVALMAP = "NCP:Counter:AllMac:AsValMap"
+WPAN_NCP_COUNTER_TX_PKT_TOTAL = "NCP:Counter:TX_PKT_TOTAL"
+WPAN_NCP_COUNTER_TX_PKT_UNICAST = "NCP:Counter:TX_PKT_UNICAST"
+WPAN_NCP_COUNTER_TX_PKT_BROADCAST = "NCP:Counter:TX_PKT_BROADCAST"
+WPAN_NCP_COUNTER_TX_PKT_ACK_REQ = "NCP:Counter:TX_PKT_ACK_REQ"
+WPAN_NCP_COUNTER_TX_PKT_ACKED = "NCP:Counter:TX_PKT_ACKED"
+WPAN_NCP_COUNTER_TX_PKT_NO_ACK_REQ = "NCP:Counter:TX_PKT_NO_ACK_REQ"
+WPAN_NCP_COUNTER_TX_PKT_DATA = "NCP:Counter:TX_PKT_DATA"
+WPAN_NCP_COUNTER_TX_PKT_DATA_POLL = "NCP:Counter:TX_PKT_DATA_POLL"
+WPAN_NCP_COUNTER_TX_PKT_BEACON = "NCP:Counter:TX_PKT_BEACON"
+WPAN_NCP_COUNTER_TX_PKT_BEACON_REQ = "NCP:Counter:TX_PKT_BEACON_REQ"
+WPAN_NCP_COUNTER_TX_PKT_OTHER = "NCP:Counter:TX_PKT_OTHER"
+WPAN_NCP_COUNTER_TX_PKT_RETRY = "NCP:Counter:TX_PKT_RETRY"
+WPAN_NCP_COUNTER_TX_ERR_CCA = "NCP:Counter:TX_ERR_CCA"
+WPAN_NCP_COUNTER_TX_ERR_ABORT = "NCP:Counter:TX_ERR_ABORT"
+WPAN_NCP_COUNTER_RX_PKT_TOTAL = "NCP:Counter:RX_PKT_TOTAL"
+WPAN_NCP_COUNTER_RX_PKT_UNICAST = "NCP:Counter:RX_PKT_UNICAST"
+WPAN_NCP_COUNTER_RX_PKT_BROADCAST = "NCP:Counter:RX_PKT_BROADCAST"
+WPAN_NCP_COUNTER_RX_PKT_DATA = "NCP:Counter:RX_PKT_DATA"
+WPAN_NCP_COUNTER_RX_PKT_DATA_POLL = "NCP:Counter:RX_PKT_DATA_POLL"
+WPAN_NCP_COUNTER_RX_PKT_BEACON = "NCP:Counter:RX_PKT_BEACON"
+WPAN_NCP_COUNTER_RX_PKT_BEACON_REQ = "NCP:Counter:RX_PKT_BEACON_REQ"
+WPAN_NCP_COUNTER_RX_PKT_OTHER = "NCP:Counter:RX_PKT_OTHER"
+WPAN_NCP_COUNTER_RX_PKT_FILT_WL = "NCP:Counter:RX_PKT_FILT_WL"
+WPAN_NCP_COUNTER_RX_PKT_FILT_DA = "NCP:Counter:RX_PKT_FILT_DA"
+WPAN_NCP_COUNTER_RX_ERR_EMPTY = "NCP:Counter:RX_ERR_EMPTY"
+WPAN_NCP_COUNTER_RX_ERR_UKWN_NBR = "NCP:Counter:RX_ERR_UKWN_NBR"
+WPAN_NCP_COUNTER_RX_ERR_NVLD_SADDR = "NCP:Counter:RX_ERR_NVLD_SADDR"
+WPAN_NCP_COUNTER_RX_ERR_SECURITY = "NCP:Counter:RX_ERR_SECURITY"
+WPAN_NCP_COUNTER_RX_ERR_BAD_FCS = "NCP:Counter:RX_ERR_BAD_FCS"
+WPAN_NCP_COUNTER_RX_ERR_OTHER = "NCP:Counter:RX_ERR_OTHER"
+WPAN_NCP_COUNTER_TX_IP_SEC_TOTAL = "NCP:Counter:TX_IP_SEC_TOTAL"
+WPAN_NCP_COUNTER_TX_IP_INSEC_TOTAL = "NCP:Counter:TX_IP_INSEC_TOTAL"
+WPAN_NCP_COUNTER_TX_IP_DROPPED = "NCP:Counter:TX_IP_DROPPED"
+WPAN_NCP_COUNTER_RX_IP_SEC_TOTAL = "NCP:Counter:RX_IP_SEC_TOTAL"
+WPAN_NCP_COUNTER_RX_IP_INSEC_TOTAL = "NCP:Counter:RX_IP_INSEC_TOTAL"
+WPAN_NCP_COUNTER_RX_IP_DROPPED = "NCP:Counter:RX_IP_DROPPED"
+WPAN_NCP_COUNTER_TX_SPINEL_TOTAL = "NCP:Counter:TX_SPINEL_TOTAL"
+WPAN_NCP_COUNTER_RX_SPINEL_TOTAL = "NCP:Counter:RX_SPINEL_TOTAL"
+WPAN_NCP_COUNTER_RX_SPINEL_ERR = "NCP:Counter:RX_SPINEL_ERR"
+WPAN_NCP_COUNTER_IP_TX_SUCCESS = "NCP:Counter:IP_TX_SUCCESS"
+WPAN_NCP_COUNTER_IP_RX_SUCCESS = "NCP:Counter:IP_RX_SUCCESS"
+WPAN_NCP_COUNTER_IP_TX_FAILURE = "NCP:Counter:IP_TX_FAILURE"
+WPAN_NCP_COUNTER_IP_RX_FAILURE = "NCP:Counter:IP_RX_FAILURE"
+
+# ----------------------------------------------------------------------------------------------------------------------
 # Valid state values
 
-STATE_UNINITIALIZED                            =  '"uninitialized"'
-STATE_FAULT                                    =  '"uninitialized:fault"'
-STATE_UPGRADING                                =  '"uninitialized:upgrading"'
-STATE_DEEP_SLEEP                               =  '"offline:deep-sleep"'
-STATE_OFFLINE                                  =  '"offline"'
-STATE_COMMISSIONED                             =  '"offline:commissioned"'
-STATE_ASSOCIATING                              =  '"associating"'
-STATE_CREDENTIALS_NEEDED                       =  '"associating:credentials-needed"'
-STATE_ASSOCIATED                               =  '"associated"'
-STATE_ISOLATED                                 =  '"associated:no-parent"'
-STATE_NETWAKE_ASLEEP                           =  '"associated:netwake-asleep"'
-STATE_NETWAKE_WAKING                           =  '"associated:netwake-waking"'
+STATE_UNINITIALIZED = '"uninitialized"'
+STATE_FAULT = '"uninitialized:fault"'
+STATE_UPGRADING = '"uninitialized:upgrading"'
+STATE_DEEP_SLEEP = '"offline:deep-sleep"'
+STATE_OFFLINE = '"offline"'
+STATE_COMMISSIONED = '"offline:commissioned"'
+STATE_ASSOCIATING = '"associating"'
+STATE_CREDENTIALS_NEEDED = '"associating:credentials-needed"'
+STATE_ASSOCIATED = '"associated"'
+STATE_ISOLATED = '"associated:no-parent"'
+STATE_NETWAKE_ASLEEP = '"associated:netwake-asleep"'
+STATE_NETWAKE_WAKING = '"associated:netwake-waking"'
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # MCU Power state from `WPAN_NCP_MCU_POWER_STATE`
 
-MCU_POWER_STATE_ON                             = '"on"'
-MCU_POWER_STATE_LOW_POWER                      = '"low-power"'
-MCU_POWER_STATE_OFF                            = '"off"'
+MCU_POWER_STATE_ON = '"on"'
+MCU_POWER_STATE_LOW_POWER = '"low-power"'
+MCU_POWER_STATE_OFF = '"off"'
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
+# Node Radio Link Types (Use as input to `Node()` initializer)
+
+NODE_15_4 = "-15.4"
+NODE_TREL = "-trel"
+NODE_15_4_TREL = "-15.4-trel"
+
+# -----------------------------------------------------------------------------------------------------------------------
 # Node types (from `WPAN_NODE_TYPE` property)
 
-NODE_TYPE_UNKNOWN                              = '"unknown"'
-NODE_TYPE_LEADER                               = '"leader"'
-NODE_TYPE_ROUTER                               = '"router"'
-NODE_TYPE_END_DEVICE                           = '"end-device"'
-NODE_TYPE_SLEEPY_END_DEVICE                    = '"sleepy-end-device"'
-NODE_TYPE_COMMISSIONER                         = '"commissioner"'
-NODE_TYPE_NEST_LURKER                          = '"nl-lurker"'
+NODE_TYPE_UNKNOWN = '"unknown"'
+NODE_TYPE_LEADER = '"leader"'
+NODE_TYPE_ROUTER = '"router"'
+NODE_TYPE_END_DEVICE = '"end-device"'
+NODE_TYPE_SLEEPY_END_DEVICE = '"sleepy-end-device"'
+NODE_TYPE_COMMISSIONER = '"commissioner"'
+NODE_TYPE_NEST_LURKER = '"nl-lurker"'
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Node types used by `Node.join()`
 
-JOIN_TYPE_ROUTER                               = 'r'
-JOIN_TYPE_END_DEVICE                           = 'e'
-JOIN_TYPE_SLEEPY_END_DEVICE                    = 's'
+JOIN_TYPE_ROUTER = 'r'
+JOIN_TYPE_END_DEVICE = 'e'
+JOIN_TYPE_SLEEPY_END_DEVICE = 's'
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
+# Address Cache Table Entry States
+
+ADDRESS_CACHE_ENTRY_STATE_CACHED = "cached"
+ADDRESS_CACHE_ENTRY_STATE_SNOOPED = "snooped"
+ADDRESS_CACHE_ENTRY_STATE_QUERY = "query"
+ADDRESS_CACHE_ENTRY_STATE_RETRY_QUERY = "retry-query"
+
+# -----------------------------------------------------------------------------------------------------------------------
 # Bit Flags for Thread Device Mode `WPAN_THREAD_DEVICE_MODE`
 
-THREAD_MODE_FLAG_FULL_NETWORK_DATA   = (1 << 0)
-THREAD_MODE_FLAG_FULL_THREAD_DEV     = (1 << 1)
-THREAD_MODE_FLAG_SECURE_DATA_REQUEST = (1 << 2)
-THREAD_MODE_FLAG_RX_ON_WHEN_IDLE     = (1 << 3)
+THREAD_MODE_FLAG_FULL_NETWORK_DATA = (1 << 0)
+THREAD_MODE_FLAG_FULL_THREAD_DEV = (1 << 1)
+THREAD_MODE_FLAG_RX_ON_WHEN_IDLE = (1 << 3)
+
+# -----------------------------------------------------------------------------------------------------------------------
+# Radio Link type
+
+RADIO_LINK_IEEE_802_15_4 = "IEEE_802_15_4"
+RADIO_LINK_TREL_UDP6 = "TREL_UDP6"
+RADIO_LINK_TOBLE = "TOBLE"
 
 _OT_BUILDDIR = os.getenv('top_builddir', '../..')
 _WPANTUND_PREFIX = os.getenv('WPANTUND_PREFIX', '/usr/local')
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
+
 
 def _log(text, new_line=True, flush=True):
     sys.stdout.write(text)
@@ -252,30 +291,35 @@ def _log(text, new_line=True, flush=True):
     if flush:
         sys.stdout.flush()
 
-#-----------------------------------------------------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------------------------------------------------
 # Node class
+
 
 class Node(object):
     """ A wpantund OT NCP instance """
+    # defines the default verbosity setting (can be changed per `Node`)
+    _VERBOSE = os.getenv('TORANJ_VERBOSE', 'no').lower() in ['true', '1', 't', 'y', 'yes', 'on']
+    _SPEED_UP_FACTOR = 1  # defines the default time speed up factor
 
-    _VERBOSE = False        # defines the default verbosity setting (can be changed per `Node`)
-    _SPEED_UP_FACTOR = 1    # defines the default time speed up factor
-
-    # path to `wpantund`, `wpanctl`, `ot-ncp-ftd`,`ot-ncp` and `ot-ncp-radio`
+    # path to `wpantund`, `wpanctl`, `ot-ncp-ftd`,`ot-ncp` and `ot-rcp`
     _WPANTUND = '%s/sbin/wpantund' % _WPANTUND_PREFIX
-    _WPANCTL  = '%s/bin/wpanctl' % _WPANTUND_PREFIX
+    _WPANCTL = '%s/bin/wpanctl' % _WPANTUND_PREFIX
 
     _OT_NCP_FTD = '%s/examples/apps/ncp/ot-ncp-ftd' % _OT_BUILDDIR
-    _OT_NCP_FTD_POSIX_APP = '%s/src/posix/ot-ncp' % _OT_BUILDDIR
-    _OT_NCP_RADIO = '%s/examples/apps/ncp/ot-ncp-radio' % _OT_BUILDDIR
+    _OT_NCP_FTD_POSIX = '%s/src/posix/ot-ncp' % _OT_BUILDDIR
+    _OT_RCP = '%s/examples/apps/ncp/ot-rcp' % _OT_BUILDDIR
 
     # Environment variable used to determine how to run OpenThread
-    # If set to 1, then posix-app (`ot-ncp`) is used along with a posix RCP `ot-ncp-radio`.
+    # If set to 1, then posix NCP (`ot-ncp`) is used along with a posix RCP `ot-rcp`.
     # Otherwise, the posix NCP `ot-ncp-ftd` is used
-    _POSIX_APP_ENV_VAR = 'TORANJ_POSIX_APP_RCP_MODEL'
+    _POSIX_ENV_VAR = 'TORANJ_POSIX_RCP_MODEL'
 
-    _TUND_LOG_TO_FILE = True            # determines if the wpantund logs are saved in file or sent to stdout
-    _TUND_LOG_FNAME = 'wpantund-logs'   # name of wpantund log file (if # name of wpantund _TUND_LOG_TO_FILE is True)
+    # determines if the wpantund logs are saved in file or sent to stdout
+    _TUND_LOG_TO_FILE = True
+    # name of wpantund log file (if # name of wpantund _TUND_LOG_TO_FILE is
+    # True)
+    _TUND_LOG_FNAME = 'wpantund-logs'
 
     # interface name
     _INTFC_NAME_PREFIX = 'utun' if sys.platform == 'darwin' else 'wpan'
@@ -284,7 +328,7 @@ class Node(object):
     _cur_index = _START_INDEX
     _all_nodes = weakref.WeakSet()
 
-    def __init__(self, verbose=_VERBOSE):
+    def __init__(self, radios=None, verbose=_VERBOSE):
         """Creates a new `Node` instance"""
 
         index = Node._cur_index
@@ -294,24 +338,25 @@ class Node(object):
         self._interface_name = self._INTFC_NAME_PREFIX + str(index)
         self._verbose = verbose
 
-        # Check if env variable `TORANJ_POSIX_APP_RCP_MODEL` is defined
+        # Check if env variable `TORANJ_POSIX_RCP_MODEL` is defined
         # and use it to determine if to use operate in "posix-ncp-app".
-        if self._POSIX_APP_ENV_VAR in os.environ:
-            use_posix_app_with_rcp = (os.environ[self._POSIX_APP_ENV_VAR] in ['1', 'yes'])
+        if self._POSIX_ENV_VAR in os.environ:
+            self._use_posix_with_rcp = (os.environ[self._POSIX_ENV_VAR] in ['1', 'yes'])
         else:
-            use_posix_app_with_rcp = False
+            self._use_posix_with_rcp = False
 
-        if use_posix_app_with_rcp:
-            ncp_socket_path = 'system:{} -s {} {} {}'.format(self._OT_NCP_FTD_POSIX_APP, self._SPEED_UP_FACTOR,
-                self._OT_NCP_RADIO, index)
+        if self._use_posix_with_rcp:
+            ncp_socket_path = 'system:{}{} -s {} spinel+hdlc+uart://{}?forkpty-arg={}'.format(
+                self._OT_NCP_FTD_POSIX, '' if radios is None else radios, self._SPEED_UP_FACTOR, self._OT_RCP, index)
         else:
-            ncp_socket_path = 'system:{} {} {}'.format(self._OT_NCP_FTD, index, self._SPEED_UP_FACTOR)
+            ncp_socket_path = 'system:{}{} {} {}'.format(self._OT_NCP_FTD, '' if radios is None else radios, index,
+                                                         self._SPEED_UP_FACTOR)
 
         cmd = self._WPANTUND + \
-               ' -o Config:NCP:SocketPath \"{}\"'.format(ncp_socket_path) + \
-               ' -o Config:TUN:InterfaceName {}'.format(self._interface_name) + \
-               ' -o Config:NCP:DriverName spinel' + \
-               ' -o Daemon:SyslogMask \"all -debug\"'
+            ' -o Config:NCP:SocketPath \"{}\"'.format(ncp_socket_path) + \
+            ' -o Config:TUN:InterfaceName {}'.format(self._interface_name) + \
+            ' -o Config:NCP:DriverName spinel' + \
+            ' -o Daemon:SyslogMask \"all -debug\"'
 
         if Node._TUND_LOG_TO_FILE:
             self._tund_log_file = open(self._TUND_LOG_FNAME + str(index) + '.log', 'wb')
@@ -325,7 +370,8 @@ class Node(object):
 
         self._wpanctl_cmd = self._WPANCTL + ' -I ' + self._interface_name + ' '
 
-        self._recvers = weakref.WeakValueDictionary()  # map from local_port to `AsyncReceiver` object
+        # map from local_port to `AsyncReceiver` object
+        self._recvers = weakref.WeakValueDictionary()
         Node._all_nodes.add(self)
 
     def __del__(self):
@@ -349,7 +395,11 @@ class Node(object):
     def tund_log_file(self):
         return self._tund_log_file
 
-    #------------------------------------------------------------------------------------------------------------------
+    @property
+    def using_posix_with_rcp(self):
+        return self._use_posix_with_rcp
+
+    # ------------------------------------------------------------------------------------------------------------------
     # Executing a `wpanctl` command
 
     def wpanctl(self, cmd):
@@ -373,7 +423,7 @@ class Node(object):
 
         return result
 
-    #------------------------------------------------------------------------------------------------------------------
+    # ------------------------------------------------------------------------------------------------------------------
     # APIs matching `wpanctl` commands.
 
     def get(self, prop_name, value_only=True):
@@ -389,8 +439,8 @@ class Node(object):
         return self._update_prop('remove', prop_name, value, binary_data)
 
     def _update_prop(self, action, prop_name, value, binary_data):
-        return self.wpanctl(action + ' ' + prop_name + ' ' + ('-d ' if binary_data else '') +
-                            '-v ' + value)  # use -v to handle values starting with `-`.
+        return self.wpanctl(action + ' ' + prop_name + ' ' + ('-d ' if binary_data else '') + '-v ' +
+                            value)  # use -v to handle values starting with `-`.
 
     def reset(self):
         return self.wpanctl('reset')
@@ -401,10 +451,18 @@ class Node(object):
     def leave(self):
         return self.wpanctl('leave')
 
-    def form(self, name, channel=None, channel_mask=None, panid=None, xpanid=None, key=None, key_index=None,
-            node_type=None, mesh_local_prefix=None, legacy_prefix=None):
-        return self.wpanctl('form \"' + name + '\"' +
-                            (' -c {}'.format(channel) if channel is not None else '') +
+    def form(self,
+             name,
+             channel=None,
+             channel_mask=None,
+             panid=None,
+             xpanid=None,
+             key=None,
+             key_index=None,
+             node_type=None,
+             mesh_local_prefix=None,
+             legacy_prefix=None):
+        return self.wpanctl('form \"' + name + '\"' + (' -c {}'.format(channel) if channel is not None else '') +
                             (' -m {}'.format(channel_mask) if channel_mask is not None else '') +
                             (' -p {}'.format(panid) if panid is not None else '') +
                             (' -x {}'.format(xpanid) if xpanid is not None else '') +
@@ -414,29 +472,22 @@ class Node(object):
                             (' -M {}'.format(mesh_local_prefix) if mesh_local_prefix is not None else '') +
                             (' -L {}'.format(legacy_prefix) if legacy_prefix is not None else ''))
 
-
     def join(self, name, channel=None, node_type=None, panid=None, xpanid=None, key=None):
-        return self.wpanctl('join \"' + name + '\"' +
-                            (' -c {}'.format(channel) if channel is not None else '') +
+        return self.wpanctl('join \"' + name + '\"' + (' -c {}'.format(channel) if channel is not None else '') +
                             (' -T {}'.format(node_type) if node_type is not None else '') +
                             (' -p {}'.format(panid) if panid is not None else '') +
                             (' -x {}'.format(xpanid) if xpanid is not None else '') +
-                            (' -k {}'.format(key) if key is not None else '') +
-                            (' -n'))
+                            (' -k {}'.format(key) if key is not None else '') + (' -n'))
 
     def active_scan(self, channel=None):
-        return self.wpanctl('scan' +
-                            (' -c {}'.format(channel) if channel is not None else ''))
+        return self.wpanctl('scan' + (' -c {}'.format(channel) if channel is not None else ''))
 
     def energy_scan(self, channel=None):
-        return self.wpanctl('scan -e' +
-                            (' -c {}'.format(channel) if channel is not None else ''))
+        return self.wpanctl('scan -e' + (' -c {}'.format(channel) if channel is not None else ''))
 
     def discover_scan(self, channel=None, joiner_only=False, enable_filtering=False, panid_filter=None):
-        return self.wpanctl('scan -d' +
-                            (' -c {}'.format(channel) if channel is not None else '') +
-                            (' -j' if joiner_only else '') +
-                            (' -e' if enable_filtering else '') +
+        return self.wpanctl('scan -d' + (' -c {}'.format(channel) if channel is not None else '') +
+                            (' -j' if joiner_only else '') + (' -f' if enable_filtering else '') +
                             (' -p {}'.format(panid_filter) if panid_filter is not None else ''))
 
     def permit_join(self, duration_sec=None, port=None, udp=True, tcp=True):
@@ -450,27 +501,28 @@ class Node(object):
         if port is not None and duration_sec is None:
             duration_sec = '240'
 
-        return self.wpanctl('permit-join' +
-                            (' {}'.format(duration_sec) if duration_sec is not None else '') +
-                            (' {}'.format(port) if port is not None else '') +
-                            traffic_type)
+        return self.wpanctl('permit-join' + (' {}'.format(duration_sec) if duration_sec is not None else '') +
+                            (' {}'.format(port) if port is not None else '') + traffic_type)
 
     def config_gateway(self, prefix, default_route=False, priority=None):
-        return self.wpanctl('config-gateway ' + prefix +
-                            (' -d' if default_route else '') +
+        return self.wpanctl('config-gateway ' + prefix + (' -d' if default_route else '') +
                             (' -P {}'.format(priority) if priority is not None else ''))
 
-    def add_prefix(self, prefix, prefix_len=None, priority=None, stable=True, on_mesh=False, slaac=False, dhcp=False,
-            configure=False, default_route=False, preferred=False):
-        return self.wpanctl('add-prefix ' + prefix +
-                            (' -l {}'.format(prefix_len) if prefix_len is not None else '') +
-                            (' -P {}'.format(priority) if priority is not None else '') +
-                            (' -s' if stable else '') +
-                            (' -f' if preferred else '') +
-                            (' -a' if slaac else '') +
-                            (' -d' if dhcp else '') +
-                            (' -c' if configure else '') +
-                            (' -r' if default_route else '') +
+    def add_prefix(self,
+                   prefix,
+                   prefix_len=None,
+                   priority=None,
+                   stable=True,
+                   on_mesh=False,
+                   slaac=False,
+                   dhcp=False,
+                   configure=False,
+                   default_route=False,
+                   preferred=False):
+        return self.wpanctl('add-prefix ' + prefix + (' -l {}'.format(prefix_len) if prefix_len is not None else '') +
+                            (' -P {}'.format(priority) if priority is not None else '') + (' -s' if stable else '') +
+                            (' -f' if preferred else '') + (' -a' if slaac else '') + (' -d' if dhcp else '') +
+                            (' -c' if configure else '') + (' -r' if default_route else '') +
                             (' -o' if on_mesh else ''))
 
     def remove_prefix(self, prefix, prefix_len=None):
@@ -481,8 +533,7 @@ class Node(object):
         """route priority [(>0 for high, 0 for medium, <0 for low)]"""
         return self.wpanctl('add-route ' + route_prefix +
                             (' -l {}'.format(prefix_len) if prefix_len is not None else '') +
-                            (' -p {}'.format(priority) if priority is not None else '') +
-                            ('' if stable else '-n'))
+                            (' -p {}'.format(priority) if priority is not None else '') + ('' if stable else ' -n'))
 
     def remove_route(self, route_prefix, prefix_len=None, priority=None, stable=True):
         """route priority [(>0 for high, 0 for medium, <0 for low)]"""
@@ -490,7 +541,23 @@ class Node(object):
                             (' -l {}'.format(prefix_len) if prefix_len is not None else '') +
                             (' -p {}'.format(priority) if priority is not None else ''))
 
-    #------------------------------------------------------------------------------------------------------------------
+    def commissioner_start(self):
+        return self.wpanctl('commissioner start')
+
+    def commissioner_add_joiner(self, eui64, pskd, timeout='100'):
+        return self.wpanctl('commissioner joiner-add {} {} {}'.format(eui64, timeout, pskd))
+
+    def commissioner_add_joiner_with_discerner(self, discerner_value, discerner_bit_len, pskd, timeout='100'):
+        return self.wpanctl('commissioner joiner-add-discerner {} {} {} {}'.format(discerner_value, discerner_bit_len,
+                                                                                   timeout, pskd))
+
+    def joiner_join(self, pskd):
+        return self.wpanctl('joiner --join {}'.format(pskd))
+
+    def joiner_attach(self):
+        return self.wpanctl('joiner --attach')
+
+    # ------------------------------------------------------------------------------------------------------------------
     # Helper methods
 
     def is_associated(self):
@@ -502,23 +569,22 @@ class Node(object):
         if not node.is_associated():
             return "{} is not associated".format(node)
 
-        return self.join(
-            node.get(WPAN_NAME)[1:-1],
-            channel=node.get(WPAN_CHANNEL),
-            node_type=node_type,
-            panid=node.get(WPAN_PANID),
-            xpanid=node.get(WPAN_XPANID),
-            key=node.get(WPAN_KEY)[1:-1] if should_set_key else None)
+        return self.join(node.get(WPAN_NAME)[1:-1],
+                         channel=node.get(WPAN_CHANNEL),
+                         node_type=node_type,
+                         panid=node.get(WPAN_PANID),
+                         xpanid=node.get(WPAN_XPANID),
+                         key=node.get(WPAN_KEY)[1:-1] if should_set_key else None)
 
-    def whitelist_node(self, node):
-        """Adds a given node (of type `Node`) to the whitelist of `self` and enables whitelisting on `self`"""
+    def allowlist_node(self, node):
+        """Adds a given node (of type `Node`) to the allowlist of `self` and enables allowlisting on `self`"""
 
-        self.add(WPAN_MAC_WHITELIST_ENTRIES, node.get(WPAN_EXT_ADDRESS)[1:-1])
-        self.set(WPAN_MAC_WHITELIST_ENABLED, '1')
+        self.add(WPAN_MAC_ALLOWLIST_ENTRIES, node.get(WPAN_EXT_ADDRESS)[1:-1])
+        self.set(WPAN_MAC_ALLOWLIST_ENABLED, '1')
 
-    def un_whitelist_node(self, node):
-        """Removes a given node (of node `Node) from the whitelist"""
-        self.remove(WPAN_MAC_WHITELIST_ENTRIES, node.get(WPAN_EXT_ADDRESS)[1:-1])
+    def un_allowlist_node(self, node):
+        """Removes a given node (of node `Node) from the allowlist"""
+        self.remove(WPAN_MAC_ALLOWLIST_ENTRIES, node.get(WPAN_EXT_ADDRESS)[1:-1])
 
     def is_in_scan_result(self, scan_result):
         """Checks if node is in the scan results
@@ -532,12 +598,11 @@ class Node(object):
         ext_address = self.get(WPAN_EXT_ADDRESS)[1:-1]
 
         for item in scan_result:
-            if all( [item.network_name == name,
-                     item.panid == panid,
-                     item.xpanid == xpanid,
-                     item.channel == channel,
-                     item.ext_address == ext_address,
-                     (item.type == ScanResult.TYPE_DISCOVERY_SCAN) or (item.joinable == joinable) ] ):
+            if all([
+                    item.network_name == name, item.panid == panid, item.xpanid == xpanid,
+                    item.channel == channel, item.ext_address == ext_address,
+                (item.type == ScanResult.TYPE_DISCOVERY_SCAN) or (item.joinable == joinable)
+            ]):
                 return True
 
         return False
@@ -559,7 +624,8 @@ class Node(object):
            `prefix_len` is an `int` specifying the prefix length.
            NOTE: this method uses linux `ip` command.
         """
-        cmd = 'ip -6 addr add '+ address + '/{} dev '.format(prefix_len) + self.interface_name
+        cmd = 'ip -6 addr add ' + address + \
+            '/{} dev '.format(prefix_len) + self.interface_name
         if self._verbose:
             _log('$ Node{} \'{}\')'.format(self._index, cmd))
 
@@ -572,18 +638,19 @@ class Node(object):
            `prefix_len` is an `int` specifying the prefix length.
            NOTE: this method uses linux `ip` command.
         """
-        cmd = 'ip -6 addr del '+ address + '/{} dev '.format(prefix_len) + self.interface_name
+        cmd = 'ip -6 addr del ' + address + \
+            '/{} dev '.format(prefix_len) + self.interface_name
         if self._verbose:
             _log('$ Node{} \'{}\')'.format(self._index, cmd))
 
         result = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
         return result
 
-    #------------------------------------------------------------------------------------------------------------------
+    # ------------------------------------------------------------------------------------------------------------------
     # class methods
 
     @classmethod
-    def init_all_nodes(cls, disable_logs=True, wait_time=15):
+    def init_all_nodes(cls, disable_logs=not _VERBOSE, wait_time=15):
         """Issues a `wpanctl.leave` on all `Node` objects and waits for them to be ready"""
         random.seed(123456)
         time.sleep(0.5)
@@ -593,7 +660,7 @@ class Node(object):
                 try:
                     node._wpantund_process.poll()
                     if node._wpantund_process.returncode is not None:
-                        print 'Node {} wpantund instance has terminated unexpectedly'.format(node)
+                        print('Node {} wpantund instance has terminated unexpectedly'.format(node))
                     if disable_logs:
                         node.set(WPAN_OT_LOG_LEVEL, '0')
                     node.leave()
@@ -602,9 +669,9 @@ class Node(object):
                         _log(' -> \'{}\' exit code: {}'.format(e.output, e.returncode))
                     interval = time.time() - start_time
                     if interval > wait_time:
-                        print 'Took too long to init node {} ({}>{} sec)'.format(node, interval, wait_time)
+                        print('Took too long to init node {} ({}>{} sec)'.format(node, interval, wait_time))
                         raise
-                except:
+                except BaseException:
                     raise
                 else:
                     break
@@ -624,7 +691,7 @@ class Node(object):
             raise Node._NodeError('set_time_speedup_factor() cannot be called after creating a `Node`')
         Node._SPEED_UP_FACTOR = factor
 
-    #------------------------------------------------------------------------------------------------------------------
+    # ------------------------------------------------------------------------------------------------------------------
     # IPv6 message Sender and Receiver class
 
     class _NodeError(Exception):
@@ -667,7 +734,8 @@ class Node(object):
         return AsyncSender(self, src_addr, src_port, dst_addr, dst_port, msg, count, mcast_hops)
 
     def _get_receiver(self, local_port):
-        # Gets or creates a receiver (an `AsyncReceiver`) tied to given port number
+        # Gets or creates a receiver (an `AsyncReceiver`) tied to given port
+        # number
         if local_port in self._recvers:
             receiver = self._recvers[local_port]
         else:
@@ -676,7 +744,8 @@ class Node(object):
         return receiver
 
     def _remove_recver(self, recvr):
-        # Removes a receiver from weak dictionary - called when the receiver is done and its socket is closed
+        # Removes a receiver from weak dictionary - called when the receiver is
+        # done and its socket is closed
         local_port = recvr.local_port
         if local_port in self._recvers:
             del self._recvers[local_port]
@@ -687,7 +756,7 @@ class Node(object):
         receiver._add_sender(sender.src_addr, sender.src_port, sender.msg, sender.count)
         return receiver
 
-    def preapre_listener(self, local_port, timeout=1):
+    def prepare_listener(self, local_port, timeout=1):
         """Prepares a listener (an `AsyncReceiver`) listening on the given `local_port` for given `timeout` (sec)"""
         receiver = self._get_receiver(local_port)
         receiver._set_listen_timeout(timeout)
@@ -701,28 +770,32 @@ class Node(object):
             while asyncore.socket_map:
                 elapsed_time = time.time() - start_time
                 if elapsed_time > timeout:
-                    print 'Performing aysnc tx/tx took too long ({}>{} sec)'.format(elapsed_time, timeout)
+                    print('Performing aysnc tx/tx took too long ({}>{} sec)'.format(elapsed_time, timeout))
                     raise Node._NodeError('perform_tx_rx timed out ({}>{} sec)'.format(elapsed_time, timeout))
                 # perform a single asyncore loop
                 asyncore.loop(timeout=0.5, count=1)
-        except:
-            print 'Failed to perform async rx/tx'
+        except BaseException:
+            print('Failed to perform async rx/tx')
             raise
 
-#-----------------------------------------------------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------------------------------------------------
 # `AsyncSender` and `AsyncReceiver classes
 
 _SO_BINDTODEVICE = 25
 
+
 def _is_ipv6_addr_link_local(ip_addr):
     """Indicates if a given IPv6 address is link-local"""
     return ip_addr.lower().startswith('fe80::')
+
 
 def _create_socket_address(ip_address, port):
     """Convert a given IPv6 address (string) and port number into a socket address"""
     # `socket.getaddrinfo()` returns a list of `(family, socktype, proto, canonname, sockaddr)` where `sockaddr`
     # (at index 4) can be used as input in socket methods (like `sendto()`, `bind()`, etc.).
     return socket.getaddrinfo(ip_address, port)[0][4]
+
 
 class AsyncSender(asyncore.dispatcher):
     """ An IPv6 async message sender - use `Node.prepare_tx()` to create one"""
@@ -750,7 +823,8 @@ class AsyncSender(asyncore.dispatcher):
 
         # Bind the socket to the given src address
         if _is_ipv6_addr_link_local(src_addr):
-            # If src is a link local address it requires the interface name to be specified.
+            # If src is a link local address it requires the interface name to
+            # be specified.
             src_sock_addr = _create_socket_address(src_addr + '%' + node.interface_name, src_port)
         else:
             src_sock_addr = _create_socket_address(src_addr, src_port)
@@ -809,9 +883,8 @@ class AsyncSender(asyncore.dispatcher):
                 info_text = '{} bytes ("{}")'.format(sent_len, self._tx_buffer[:sent_len])
             else:
                 info_text = '{} bytes'.format(sent_len)
-            _log('- Node{} sent {} to [{}]:{} from [{}]:{}'.format(self._node._index, info_text,
-                                                                   self._dst_addr, self._dst_port,
-                                                                   self._src_addr, self._src_port))
+            _log('- Node{} sent {} to [{}]:{} from [{}]:{}'.format(self._node._index, info_text, self._dst_addr,
+                                                                   self._dst_port, self._src_addr, self._src_port))
 
         self._tx_buffer = self._tx_buffer[sent_len:]
 
@@ -825,7 +898,9 @@ class AsyncSender(asyncore.dispatcher):
     def handle_close(self):
         self.close()
 
-#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 
 class AsyncReceiver(asyncore.dispatcher):
     """ An IPv6 async message receiver - use `prepare_rx()` to create one"""
@@ -833,6 +908,7 @@ class AsyncReceiver(asyncore.dispatcher):
     _MAX_RECV_SIZE = 2048
 
     class _SenderInfo(object):
+
         def __init__(self, sender_addr, sender_port, msg, count):
             self._sender_addr = sender_addr
             self._sender_port = sender_port
@@ -851,9 +927,11 @@ class AsyncReceiver(asyncore.dispatcher):
     def __init__(self, node, local_port):
         self._node = node
         self._local_port = local_port
-        self._senders = []        # list of `_SenderInfo` objects
-        self._all_rx = []         # contains all received messages as a list of (pkt, (src_addr, src_port))
-        self._timeout = 0         # listen timeout (zero means forever)
+        self._senders = []  # list of `_SenderInfo` objects
+        # contains all received messages as a list of (pkt, (src_addr,
+        # src_port))
+        self._all_rx = []
+        self._timeout = 0  # listen timeout (zero means forever)
         self._started = False
         self._start_time = 0
 
@@ -918,15 +996,15 @@ class AsyncReceiver(asyncore.dispatcher):
 
         if (_is_ipv6_addr_link_local(src_addr)):
             if '%' in src_addr:
-                src_addr = src_addr.split('%')[0]   # remove the interface name from address
+                # remove the interface name from address
+                src_addr = src_addr.split('%')[0]
 
         if self._node._verbose:
             if len(msg) < 30:
                 info_text = '{} bytes ("{}")'.format(len(msg), msg)
             else:
                 info_text = '{} bytes'.format(len(msg))
-            _log('- Node{} received {} on port {} from [{}]:{}'.format(self._node._index, info_text,
-                                                                       self._local_port,
+            _log('- Node{} received {} on port {} from [{}]:{}'.format(self._node._index, info_text, self._local_port,
                                                                        src_addr, src_port))
 
         self._all_rx.append((msg, (src_addr, src_port)))
@@ -936,24 +1014,31 @@ class AsyncReceiver(asyncore.dispatcher):
 
     def handle_close(self):
         self.close()
-         # remove the receiver from the node once the socket is closed
+        # remove the receiver from the node once the socket is closed
         self._node._remove_recver(self)
 
-#-----------------------------------------------------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------------------------------------------------
+
+
 class VerifyError(Exception):
     pass
 
+
 _is_in_verify_within = False
+
 
 def verify(condition):
     """Verifies that a `condition` is true, otherwise raises a VerifyError"""
     global _is_in_verify_within
     if not condition:
         calling_frame = inspect.currentframe().f_back
-        error_message = 'verify() failed at line {} in "{}"'.format(calling_frame.f_lineno, calling_frame.f_code.co_filename)
+        error_message = 'verify() failed at line {} in "{}"'.format(calling_frame.f_lineno,
+                                                                    calling_frame.f_code.co_filename)
         if not _is_in_verify_within:
-            print error_message
+            print(error_message)
         raise VerifyError(error_message)
+
 
 def verify_within(condition_checker_func, wait_time, delay_time=0.1):
     """Verifies that a given function `condition_checker_func` passes successfully within a given wait timeout.
@@ -969,10 +1054,10 @@ def verify_within(condition_checker_func, wait_time, delay_time=0.1):
             condition_checker_func()
         except VerifyError as e:
             if time.time() - start_time > wait_time:
-                print 'Took too long to pass the condition ({}>{} sec)'.format(time.time() - start_time, wait_time)
-                print e.message
+                print('Took too long to pass the condition ({}>{} sec)'.format(time.time() - start_time, wait_time))
+                print(e.message)
                 raise e
-        except:
+        except BaseException:
             raise
         else:
             break
@@ -980,44 +1065,47 @@ def verify_within(condition_checker_func, wait_time, delay_time=0.1):
             time.sleep(delay_time)
     _is_in_verify_within = old_is_in_verify_within
 
-#-----------------------------------------------------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------------------------------------------------
 # Parsing `wpanctl` output
 
-#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
 class ScanResult(object):
     """ This object encapsulates a scan result (active/discover/energy scan)"""
 
-    TYPE_ACTIVE_SCAN     = 'active-scan'
-    TYPE_DISCOVERY_SCAN  = 'discover-scan'
-    TYPE_ENERGY_SCAN     = 'energy-scan'
+    TYPE_ACTIVE_SCAN = 'active-scan'
+    TYPE_DISCOVERY_SCAN = 'discover-scan'
+    TYPE_ENERGY_SCAN = 'energy-scan'
 
     def __init__(self, result_text):
 
         items = [item.strip() for item in result_text.split('|')]
 
         if len(items) == 8:
-            self._type         = ScanResult.TYPE_ACTIVE_SCAN
-            self._index        = items[0]
-            self._joinable     = (items[1] == 'YES')
+            self._type = ScanResult.TYPE_ACTIVE_SCAN
+            self._index = items[0]
+            self._joinable = (items[1] == 'YES')
             self._network_name = items[2][1:-1]
-            self._panid        = items[3]
-            self._channel      = items[4]
-            self._xpanid       = items[5]
-            self._ext_address  = items[6]
-            self._rssi         = items[7]
+            self._panid = items[3]
+            self._channel = items[4]
+            self._xpanid = items[5]
+            self._ext_address = items[6]
+            self._rssi = items[7]
         elif len(items) == 7:
-            self._type         = ScanResult.TYPE_DISCOVERY_SCAN
-            self._index        = items[0]
+            self._type = ScanResult.TYPE_DISCOVERY_SCAN
+            self._index = items[0]
             self._network_name = items[1][1:-1]
-            self._panid        = items[2]
-            self._channel      = items[3]
-            self._xpanid       = items[4]
-            self._ext_address  = items[5]
-            self._rssi         = items[6]
+            self._panid = items[2]
+            self._channel = items[3]
+            self._xpanid = items[4]
+            self._ext_address = items[5]
+            self._rssi = items[6]
         elif len(items) == 2:
-            self._type         = ScanResult.TYPE_ENERGY_SCAN
-            self._channel      = items[0]
-            self._rssi         = items[1]
+            self._type = ScanResult.TYPE_ENERGY_SCAN
+            self._channel = items[0]
+            self._rssi = items[1]
         else:
             raise ValueError('"{}" does not seem to be a valid scan result string'.result_text)
 
@@ -1056,9 +1144,11 @@ class ScanResult(object):
     def __repr__(self):
         return 'ScanResult({})'.format(self.__dict__)
 
+
 def parse_scan_result(scan_result):
     """ Parses scan result string and returns an array of `ScanResult` objects"""
-    return [ ScanResult(item) for item in scan_result.split('\n')[2:] ]  # skip first two lines which are table headers
+    return [ScanResult(item) for item in scan_result.split('\n')[2:]]  # skip first two lines which are table headers
+
 
 def parse_list(list_string):
     """
@@ -1079,7 +1169,10 @@ def parse_list(list_string):
     #
     return [line[2:-1].split()[0] for line in list_string.split('\n')[1:-1]]
 
-#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
 class OnMeshPrefix(object):
     """ This object encapsulates an on-mesh prefix"""
 
@@ -1090,25 +1183,25 @@ class OnMeshPrefix(object):
         # '\t"fd00:abba:cafe::       prefix_len:64   origin:user     stable:yes flags:0x31'
         # ' [on-mesh:1 def-route:0 config:0 dhcp:0 slaac:1 pref:1 prio:med] rloc:0x0000"'
 
-        m = re.match('\t"([0-9a-fA-F:]+)\s*prefix_len:(\d+)\s+origin:(\w*)\s+stable:(\w*).* \[' +
-                    'on-mesh:(\d)\s+def-route:(\d)\s+config:(\d)\s+dhcp:(\d)\s+slaac:(\d)\s+pref:(\d)\s+prio:(\w*)\]' +
-                    '\s+rloc:(0x[0-9a-fA-F]+)',
-                     text)
+        m = re.match(
+            r'\t"([0-9a-fA-F:]+)\s*prefix_len:(\d+)\s+origin:(\w*)\s+stable:(\w*).* \[' +
+            r'on-mesh:(\d)\s+def-route:(\d)\s+config:(\d)\s+dhcp:(\d)\s+slaac:(\d)\s+pref:(\d)\s+.*prio:(\w*)\]' +
+            r'\s+rloc:(0x[0-9a-fA-F]+)', text)
         verify(m is not None)
         data = m.groups()
 
-        self._prefix     = data[0]
+        self._prefix = data[0]
         self._prefix_len = data[1]
-        self._origin     = data[2]
-        self._stable     = (data[3] == 'yes')
-        self._on_mesh    = (data[4] == '1')
-        self._def_route  = (data[5] == '1')
-        self._config     = (data[6] == '1')
-        self._dhcp       = (data[7] == '1')
-        self._slaac      = (data[8] == '1')
-        self._preferred  = (data[9] == '1')
-        self._priority   = (data[10])
-        self._rloc16     = (data[11])
+        self._origin = data[2]
+        self._stable = (data[3] == 'yes')
+        self._on_mesh = (data[4] == '1')
+        self._def_route = (data[5] == '1')
+        self._config = (data[6] == '1')
+        self._dhcp = (data[7] == '1')
+        self._slaac = (data[8] == '1')
+        self._preferred = (data[9] == '1')
+        self._priority = (data[10])
+        self._rloc16 = (data[11])
 
     @property
     def prefix(self):
@@ -1153,11 +1246,15 @@ class OnMeshPrefix(object):
     def __repr__(self):
         return 'OnMeshPrefix({})'.format(self.__dict__)
 
+
 def parse_on_mesh_prefix_result(on_mesh_prefix_list):
     """ Parses on-mesh prefix list string and returns an array of `OnMeshPrefix` objects"""
-    return [ OnMeshPrefix(item) for item in on_mesh_prefix_list.split('\n')[1:-1] ]
+    return [OnMeshPrefix(item) for item in on_mesh_prefix_list.split('\n')[1:-1]]
 
-#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
 class ChildEntry(object):
     """ This object encapsulates a child entry"""
 
@@ -1171,19 +1268,20 @@ class ChildEntry(object):
 
         # We get rid of the first two chars `\t"' and last char '"', split the rest using whitespace as separator.
         # Then remove any ',' at end of items in the list.
-        items = [item[:-1] if item[-1] ==',' else item for item in text[2:-1].split()]
+        items = [item[:-1] if item[-1] == ',' else item for item in text[2:-1].split()]
 
         # First item in the extended address
         self._ext_address = items[0]
 
-        # Convert the rest into a dictionary by splitting using ':' as separator
-        dict = {item.split(':')[0] : item.split(':')[1] for item in items[1:]}
+        # Convert the rest into a dictionary by splitting using ':' as
+        # separator
+        dict = {item.split(':')[0]: item.split(':')[1] for item in items[1:]}
 
-        self._rloc16        = dict['RLOC16']
-        self._timeout       = dict['Timeout']
-        self._rx_on_idle    = (dict['RxOnIdle'] == 'yes')
-        self._ftd           = (dict['FTD'] == 'yes')
-        self._sec_data_req  = (dict['SecDataReq'] == 'yes')
+        self._rloc16 = dict['RLOC16']
+        self._timeout = dict['Timeout']
+        self._rx_on_idle = (dict['RxOnIdle'] == 'yes')
+        self._ftd = (dict['FTD'] == 'yes')
+        self._sec_data_req = (dict['SecDataReq'] == 'yes')
         self._full_net_data = (dict['FullNetData'] == 'yes')
 
     @property
@@ -1213,11 +1311,15 @@ class ChildEntry(object):
     def __repr__(self):
         return 'ChildEntry({})'.format(self.__dict__)
 
+
 def parse_child_table_result(child_table_list):
     """ Parses child table list string and returns an array of `ChildEntry` objects"""
-    return [ ChildEntry(item) for item in child_table_list.split('\n')[1:-1] ]
+    return [ChildEntry(item) for item in child_table_list.split('\n')[1:-1]]
 
-#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
 class NeighborEntry(object):
     """ This object encapsulates a neighbor entry"""
 
@@ -1225,24 +1327,25 @@ class NeighborEntry(object):
 
         # Example of expected text:
         #
-        # `\t"5AC95ED4646D6565, RLOC16:9403, LQIn:3, AveRssi:-20, LastRssi:-20, Age:0, LinkFC:8, MleFC:0, IsChild:yes, '
+        # `\t"5AC95ED4646D6565, RLOC16:9403, LQIn:3, AveRssi:-20, LastRssi:-20, Age:0, LinkFC:8, MleFC:0, IsChild:yes,'
         # 'RxOnIdle:no, FTD:no, SecDataReq:yes, FullNetData:yes"'
         #
 
         # We get rid of the first two chars `\t"' and last char '"', split the rest using whitespace as separator.
         # Then remove any ',' at end of items in the list.
-        items = [item[:-1] if item[-1] ==',' else item for item in text[2:-1].split()]
+        items = [item[:-1] if item[-1] == ',' else item for item in text[2:-1].split()]
 
         # First item in the extended address
         self._ext_address = items[0]
 
-        # Convert the rest into a dictionary by splitting the text using ':' as separator
-        dict = {item.split(':')[0] : item.split(':')[1] for item in items[1:]}
+        # Convert the rest into a dictionary by splitting the text using ':' as
+        # separator
+        dict = {item.split(':')[0]: item.split(':')[1] for item in items[1:]}
 
-        self._rloc16     = dict['RLOC16']
-        self._is_child   = (dict['IsChild'] == 'yes')
+        self._rloc16 = dict['RLOC16']
+        self._is_child = (dict['IsChild'] == 'yes')
         self._rx_on_idle = (dict['RxOnIdle'] == 'yes')
-        self._ftd        = (dict['FTD'] == 'yes')
+        self._ftd = (dict['FTD'] == 'yes')
 
     @property
     def ext_address(self):
@@ -1264,11 +1367,15 @@ class NeighborEntry(object):
     def __repr__(self):
         return 'NeighborEntry({})'.format(self.__dict__)
 
+
 def parse_neighbor_table_result(neighbor_table_list):
     """ Parses neighbor table list string and returns an array of `NeighborEntry` objects"""
-    return [ NeighborEntry(item) for item in neighbor_table_list.split('\n')[1:-1] ]
+    return [NeighborEntry(item) for item in neighbor_table_list.split('\n')[1:-1]]
 
-#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
 class RouterTableEntry(object):
     """ This object encapsulates a router table entry"""
 
@@ -1281,20 +1388,21 @@ class RouterTableEntry(object):
 
         # We get rid of the first two chars `\t"' and last char '"', split the rest using whitespace as separator.
         # Then remove any ',' at end of items in the list.
-        items = [item[:-1] if item[-1] ==',' else item for item in text[2:-1].split()]
+        items = [item[:-1] if item[-1] == ',' else item for item in text[2:-1].split()]
 
         # First item in the extended address
         self._ext_address = items[0]
 
-        # Convert the rest into a dictionary by splitting the text using ':' as separator
-        dict = {item.split(':')[0] : item.split(':')[1] for item in items[1:]}
+        # Convert the rest into a dictionary by splitting the text using ':' as
+        # separator
+        dict = {item.split(':')[0]: item.split(':')[1] for item in items[1:]}
 
-        self._rloc16    = int(dict['RLOC16'], 16)
+        self._rloc16 = int(dict['RLOC16'], 16)
         self._router_id = int(dict['RouterId'], 0)
-        self._next_hop  = int(dict['NextHop'], 0)
+        self._next_hop = int(dict['NextHop'], 0)
         self._path_cost = int(dict['PathCost'], 0)
-        self._age       = int(dict['Age'], 0)
-        self._le        = (dict['LinkEst'] == 'yes')
+        self._age = int(dict['Age'], 0)
+        self._le = (dict['LinkEst'] == 'yes')
 
     @property
     def ext_address(self):
@@ -1322,11 +1430,15 @@ class RouterTableEntry(object):
     def __repr__(self):
         return 'RouterTableEntry({})'.format(self.__dict__)
 
+
 def parse_router_table_result(router_table_list):
     """ Parses router table list string and returns an array of `RouterTableEntry` objects"""
-    return [ RouterTableEntry(item) for item in router_table_list.split('\n')[1:-1] ]
+    return [RouterTableEntry(item) for item in router_table_list.split('\n')[1:-1]]
 
-#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
 class AddressCacheEntry(object):
     """ This object encapsulates an address cache entry"""
 
@@ -1334,21 +1446,31 @@ class AddressCacheEntry(object):
 
         # Example of expected text:
         #
-        # '\t"fd00:1234::d427:a1d9:6204:dbae -> 0x9c00, age:0"'
-        #
+        # '\t"fd00:1234::100:8 -> 0xfffe, Age:1, State:query, CanEvict:no, Timeout:3, RetryDelay:15"`
+        # '\t"fd00:1234::3:2 -> 0x2000, Age:0, State:cached, LastTrans:0, ML-EID:fd40:ea58:a88c:0:b7ab:4919:aa7b:11a3"`
 
         # We get rid of the first two chars `\t"' and last char '"', split the rest using whitespace as separator.
         # Then remove any ',' at end of items in the list.
-        items = [item[:-1] if item[-1] ==',' else item for item in text[2:-1].split()]
+        items = [item[:-1] if item[-1] == ',' else item for item in text[2:-1].split()]
 
         # First item in the extended address
         self._address = items[0]
-        self._rloc16    = int(items[2], 16)
+        self._rloc16 = int(items[2], 16)
 
-        # Convert the rest into a dictionary by splitting the text using ':' as separator
-        dict = {item.split(':')[0] : item.split(':')[1] for item in items[3:]}
+        # Convert the rest into a dictionary by splitting the text using ':' as
+        # separator
+        dict = {item.split(':')[0]: item.split(':')[1] for item in items[3:]}
 
-        self._age       = int(dict['age'], 0)
+        self._age = int(dict['Age'], 0)
+
+        self._state = dict['State']
+
+        if self._state == ADDRESS_CACHE_ENTRY_STATE_CACHED:
+            self._last_trans = int(dict.get("LastTrans", "-1"), 0)
+        else:
+            self._can_evict = (dict['CanEvict'] == 'yes')
+            self._timeout = int(dict['Timeout'])
+            self._retry_delay = int(dict['RetryDelay'])
 
     @property
     def address(self):
@@ -1362,9 +1484,132 @@ class AddressCacheEntry(object):
     def age(self):
         return self._age
 
+    @property
+    def state(self):
+        return self._state
+
+    def can_evict(self):
+        return self._can_evict
+
+    @property
+    def timeout(self):
+        return self._timeout
+
+    @property
+    def retry_delay(self):
+        return self._retry_delay
+
+    @property
+    def last_trans(self):
+        return self._last_trans
+
     def __repr__(self):
         return 'AddressCacheEntry({})'.format(self.__dict__)
 
+
 def parse_address_cache_table_result(addr_cache_table_list):
     """ Parses address cache table list string and returns an array of `AddressCacheEntry` objects"""
-    return [ AddressCacheEntry(item) for item in addr_cache_table_list.split('\n')[1:-1] ]
+    return [AddressCacheEntry(item) for item in addr_cache_table_list.split('\n')[1:-1]]
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+class InterfaceRoute(object):
+    """ This object encapsulates an interface route entry"""
+
+    def __init__(self, text):
+
+        # Example of expected text:
+        #
+        # '\t"fd00:abba::/64             metric:256   "'
+        #
+
+        # We get rid of the first two chars `\t"' and last char '"', split the rest using whitespace as separator.
+        # Then remove any ',' at end of items in the list.
+        items = [item[:-1] if item[-1] == ',' else item for item in text[2:-1].split()]
+
+        # First item in the extended address
+        self._route_prefix = items[0].split('/')[0]
+        self._prefix_len = int(items[0].split('/')[1], 0)
+        self._metric = int(items[1].split(':')[1], 0)
+
+    @property
+    def route_prefix(self):
+        return self._route_prefix
+
+    @property
+    def prefix_len(self):
+        return self._prefix_len
+
+    @property
+    def metric(self):
+        return self._metric
+
+    def __repr__(self):
+        return 'InterfaceRoute({})'.format(self.__dict__)
+
+
+def parse_interface_routes_result(interface_routes_list):
+    """ Parses interface routes list string and returns an array of `InterfaceRoute` objects"""
+    return [InterfaceRoute(item) for item in interface_routes_list.split('\n')[1:-1]]
+
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+class MultiRadioEntry(object):
+    """ This object encapsulates a multi radio info entry"""
+
+    def __init__(self, text):
+
+        # Example of expected text:
+        #
+        # `\t"0EB758375B4976E7, RLOC16:f403, Radios:[IEEE_802_15_4(200), TREL_UDP6(255)]"`
+        #
+
+        # We get rid of the first two chars `\t"' and last char '"', split the rest using whitespace as separator.
+        # Then remove any ',' at end of items in the list.
+        items = [item[:-1] if item[-1] == ',' else item for item in text[2:-1].split()]
+
+        # First item is the extended address
+        self._ext_address = items[0]
+
+        # Second items is 'RLCO16:{rloc}'
+        self._rloc16 = items[1].split(':')[1]
+
+        # Join back rest of items, split using ":" to get list of radios of form "[IEEE_802_15_4(200) TREL_UDP6(255)]"
+        radios = " ".join(items[2:]).split(":")[1]
+
+        if radios != "[]":
+            # Get rid of `[ and `]`, then split using " ",  then convert to dictionary mapping radio type
+            # to its preference value.
+            self._radios = {radio.split("(")[0]: radio.split("(")[1][:-1] for radio in radios[1:-1].split(' ')}
+        else:
+            self._radios = {}
+
+    @property
+    def ext_address(self):
+        return self._ext_address
+
+    @property
+    def rloc16(self):
+        return self._rloc16
+
+    @property
+    def radios(self):
+        return self._radios
+
+    def supports(self, radio_type):
+        return radio_type in self._radios
+
+    def preference(self, radio_type):
+        return int(self._radios[radio_type], 0) if self.supports(radio_type) else None
+
+    def __repr__(self):
+        return 'MultiRadioEntry({})'.format(self.__dict__)
+
+
+def parse_multi_radio_result(multi_radio_list):
+    """ Parses multi radio neighbor list string and returns an array of `MultiRadioEntry` objects"""
+    return [MultiRadioEntry(item) for item in multi_radio_list.split('\n')[1:-1]]

@@ -33,18 +33,37 @@
 
 #include "string.hpp"
 
+#include <string.h>
+
 namespace ot {
 
-#if OT_STRING_WINDOWS_WORKAROUND
-
-otError StringBase::Write(char *, uint16_t, uint16_t &, const char *, va_list)
+uint16_t StringLength(const char *aString, uint16_t aMaxLength)
 {
-    // This temporarily works around the windows `openthread_k` build failure
-    // "unresolved external symbol vsnprintf"
-    return OT_ERROR_NOT_IMPLEMENTED;
+    uint16_t ret;
+
+    for (ret = 0; (ret < aMaxLength) && (aString[ret] != 0); ret++)
+    {
+        // Empty loop.
+    }
+
+    return ret;
 }
 
-#else
+const char *StringFind(const char *aString, char aChar)
+{
+    const char *ret = nullptr;
+
+    for (; *aString != '\0'; aString++)
+    {
+        if (*aString == aChar)
+        {
+            ret = aString;
+            break;
+        }
+    }
+
+    return ret;
+}
 
 otError StringBase::Write(char *aBuffer, uint16_t aSize, uint16_t &aLength, const char *aFormat, va_list aArgs)
 {
@@ -70,8 +89,68 @@ otError StringBase::Write(char *aBuffer, uint16_t aSize, uint16_t &aLength, cons
     }
 
     return error;
-};
+}
 
-#endif // OT_STRING_WINDOWS_WORKAROUND
+bool IsValidUtf8String(const char *aString)
+{
+    return IsValidUtf8String(aString, strlen(aString));
+}
+
+bool IsValidUtf8String(const char *aString, size_t aLength)
+{
+    bool    ret = true;
+    uint8_t byte;
+    uint8_t continuationBytes = 0;
+    size_t  position          = 0;
+
+    while (position < aLength)
+    {
+        byte = *reinterpret_cast<const uint8_t *>(aString + position);
+        ++position;
+
+        if ((byte & 0x80) == 0)
+        {
+            continue;
+        }
+
+        // This is a leading byte 1xxx-xxxx.
+
+        if ((byte & 0x40) == 0) // 10xx-xxxx
+        {
+            // We got a continuation byte pattern without seeing a leading byte earlier.
+            ExitNow(ret = false);
+        }
+        else if ((byte & 0x20) == 0) // 110x-xxxx
+        {
+            continuationBytes = 1;
+        }
+        else if ((byte & 0x10) == 0) // 1110-xxxx
+        {
+            continuationBytes = 2;
+        }
+        else if ((byte & 0x08) == 0) // 1111-0xxx
+        {
+            continuationBytes = 3;
+        }
+        else // 1111-1xxx  (invalid pattern).
+        {
+            ExitNow(ret = false);
+        }
+
+        while (continuationBytes-- != 0)
+        {
+            VerifyOrExit(position < aLength, ret = false);
+
+            byte = *reinterpret_cast<const uint8_t *>(aString + position);
+            ++position;
+
+            // Verify the continuation byte pattern 10xx-xxxx
+            VerifyOrExit((byte & 0xc0) == 0x80, ret = false);
+        }
+    }
+
+exit:
+    return ret;
+}
 
 } // namespace ot

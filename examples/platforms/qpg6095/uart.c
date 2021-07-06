@@ -57,6 +57,11 @@ otError otPlatUartDisable(void)
     return error;
 }
 
+otError otPlatUartFlush(void)
+{
+    return OT_ERROR_NOT_IMPLEMENTED;
+}
+
 otError otPlatUartSend(const uint8_t *aBuf, uint16_t aBufLength)
 {
     otError error = OT_ERROR_NONE;
@@ -72,4 +77,14 @@ void qorvoUartSendInput(uint8_t *buffer, uint16_t length)
 void cbQorvoUartTxDone(void)
 {
     otPlatUartSendDone();
+}
+
+OT_TOOL_WEAK void otPlatUartSendDone(void)
+{
+}
+
+OT_TOOL_WEAK void otPlatUartReceived(const uint8_t *aBuf, uint16_t aBufLength)
+{
+    OT_UNUSED_VARIABLE(aBuf);
+    OT_UNUSED_VARIABLE(aBufLength);
 }

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2016, The OpenThread Authors.
 #  All rights reserved.
@@ -27,9 +27,8 @@
 #  POSSIBILITY OF SUCH DAMAGE.
 #
 
-import io
+import ipaddress
 import struct
-
 from binascii import hexlify
 from enum import IntEnum
 
@@ -48,6 +47,7 @@ class TlvType(IntEnum):
     ND_DATA = 9
     THREAD_NETWORK_DATA = 10
     MLE_ROUTING = 11
+    IPv6_ADDRESSES = 14
     XTAL_ACCURACY = 254
 
 
@@ -225,7 +225,7 @@ class RouterMask(object):
 
     def __eq__(self, other):
         common.expect_the_same_class(self, other)
-        return self.id_sequence == other.id_sequence and self.router_id_mask == other.router_id_mask
+        return (self.id_sequence == other.id_sequence and self.router_id_mask == other.router_id_mask)
 
     def __repr__(self):
         return "RouterMask(id_sequence={}, router_id_mask={})".format(self.id_sequence, hex(self.router_id_mask))
@@ -275,6 +275,7 @@ class NdDataFactory(object):
     def parse(self, data, message_info):
         raise NotImplementedError("TODO: Not implemented yet")
 
+
 class XtalAccuracy:
     # TODO: Not implemented yet
 
@@ -315,21 +316,18 @@ class ThreadNetworkDataFactory(object):
         return ThreadNetworkData(tlvs)
 
 
-class NetworkLayerTlvsFactory(object):
+class IPv6Addresses(list):
+    pass
 
-    def __init__(self, tlvs_factories):
-        self._tlvs_factories = tlvs_factories
+
+class IPv6AddressesFactory(object):
 
     def parse(self, data, message_info):
-        tlvs = []
+        data = bytes(data.read())
+        assert len(data) % 16 == 0, data
+        addrs = IPv6Addresses()
+        for i in range(0, len(data), 16):
+            addr = ipaddress.IPv6Address(data[i:i + 16])
+            addrs.append(addr)
 
-        while data.tell() < len(data.getvalue()):
-            _type = ord(data.read(1))
-            length = ord(data.read(1))
-
-            factory = self._tlvs_factories[_type]
-            tlv = factory.parse(io.BytesIO(data.read(length)), message_info)
-
-            tlvs.append(tlv)
-
-        return tlvs
+        return addrs

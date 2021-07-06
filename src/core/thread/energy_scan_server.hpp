@@ -38,6 +38,7 @@
 
 #include "coap/coap.hpp"
 #include "common/locator.hpp"
+#include "common/non_copyable.hpp"
 #include "common/notifier.hpp"
 #include "common/timer.hpp"
 #include "net/ip6_address.hpp"
@@ -50,8 +51,10 @@ namespace ot {
  * This class implements handling Energy Scan Requests.
  *
  */
-class EnergyScanServer : public InstanceLocator
+class EnergyScanServer : public InstanceLocator, private NonCopyable
 {
+    friend class ot::Notifier;
+
 public:
     /**
      * This constructor initializes the object.
@@ -69,16 +72,15 @@ private:
     static void HandleRequest(void *aContext, otMessage *aMessage, const otMessageInfo *aMessageInfo);
     void        HandleRequest(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
 
-    static void HandleScanResult(Instance &aInstance, otEnergyScanResult *aResult);
-    void        HandleScanResult(otEnergyScanResult *aResult);
+    static void HandleScanResult(Mac::EnergyScanResult *aResult, void *aContext);
+    void        HandleScanResult(Mac::EnergyScanResult *aResult);
 
     static void HandleTimer(Timer &aTimer);
     void        HandleTimer(void);
 
-    static void HandleStateChanged(Notifier::Callback &aCallback, otChangedFlags aFlags);
-    void        HandleStateChanged(otChangedFlags aFlags);
+    void HandleNotifierEvents(Events aEvents);
 
-    otError SendReport(void);
+    void SendReport(void);
 
     Ip6::Address mCommissioner;
     uint32_t     mChannelMask;
@@ -88,12 +90,10 @@ private:
     uint8_t      mCount;
     bool         mActive;
 
-    int8_t  mScanResults[OPENTHREAD_CONFIG_MAX_ENERGY_RESULTS];
+    int8_t  mScanResults[OPENTHREAD_CONFIG_TMF_ENERGY_SCAN_MAX_RESULTS];
     uint8_t mScanResultsLength;
 
     TimerMilli mTimer;
-
-    Notifier::Callback mNotifierCallback;
 
     Coap::Resource mEnergyScan;
 };

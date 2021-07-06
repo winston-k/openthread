@@ -31,53 +31,52 @@
  *   This file implements the AnnounceSender.
  */
 
-#define WPP_NAME "announce_sender.tmh"
-
 #include "announce_sender.hpp"
 
 #include <openthread/platform/radio.h>
 
 #include "common/code_utils.hpp"
 #include "common/instance.hpp"
+#include "common/locator-getters.hpp"
 #include "common/logging.hpp"
-#include "common/owner-locator.hpp"
 #include "common/random.hpp"
 #include "meshcop/meshcop.hpp"
 #include "meshcop/meshcop_tlvs.hpp"
+#include "radio/radio.hpp"
 
 namespace ot {
 
 AnnounceSenderBase::AnnounceSenderBase(Instance &aInstance, Timer::Handler aHandler)
     : InstanceLocator(aInstance)
-    , mChannelMask()
     , mPeriod(0)
     , mJitter(0)
     , mCount(0)
     , mChannel(0)
-    , mTimer(aInstance, aHandler, this)
+    , mTimer(aInstance, aHandler)
 {
 }
 
-otError AnnounceSenderBase::SendAnnounce(Mac::ChannelMask aMask, uint8_t aCount, uint32_t aPeriod, uint16_t aJitter)
+void AnnounceSenderBase::SendAnnounce(Mac::ChannelMask aChannelMask, uint8_t aCount, uint32_t aPeriod, uint16_t aJitter)
 {
-    otError error = OT_ERROR_NONE;
+    VerifyOrExit(aPeriod != 0);
+    VerifyOrExit(aJitter < aPeriod);
 
-    VerifyOrExit(aPeriod != 0, error = OT_ERROR_INVALID_ARGS);
-    VerifyOrExit(aJitter < aPeriod, error = OT_ERROR_INVALID_ARGS);
+    aChannelMask.Intersect(Get<Mac::Mac>().GetSupportedChannelMask());
+    VerifyOrExit(!aChannelMask.IsEmpty());
 
-    aMask.Intersect(OT_RADIO_SUPPORTED_CHANNELS);
-    VerifyOrExit(!aMask.IsEmpty(), error = OT_ERROR_INVALID_ARGS);
-
-    mChannelMask = aMask;
+    mChannelMask = aChannelMask;
     mCount       = aCount;
     mPeriod      = aPeriod;
     mJitter      = aJitter;
     mChannel     = Mac::ChannelMask::kChannelIteratorFirst;
 
-    mTimer.Start(Random::AddJitter(mPeriod, mJitter));
+    mTimer.Start(Random::NonCrypto::AddJitter(mPeriod, mJitter));
+
+    otLogInfoMle("Starting periodic MLE Announcements tx, mask %s, count %u, period %u, jitter %u",
+                 aChannelMask.ToString().AsCString(), aCount, aPeriod, aJitter);
 
 exit:
-    return error;
+    return;
 }
 
 void AnnounceSenderBase::HandleTimer(void)
@@ -98,59 +97,60 @@ void AnnounceSenderBase::HandleTimer(void)
         error    = mChannelMask.GetNextChannel(mChannel);
     }
 
-    assert(error == OT_ERROR_NONE);
+    OT_ASSERT(error == OT_ERROR_NONE);
 
-    GetNetif().GetMle().SendAnnounce(mChannel, false);
+    Get<Mle::MleRouter>().SendAnnounce(mChannel, false);
 
-    mTimer.Start(Random::AddJitter(mPeriod, mJitter));
+    mTimer.Start(Random::NonCrypto::AddJitter(mPeriod, mJitter));
 
 exit:
     return;
 }
 
-#if OPENTHREAD_CONFIG_ENABLE_ANNOUNCE_SENDER
+#if OPENTHREAD_CONFIG_ANNOUNCE_SENDER_ENABLE
 
 AnnounceSender::AnnounceSender(Instance &aInstance)
-    : AnnounceSenderBase(aInstance, &AnnounceSender::HandleTimer)
-    , mNotifierCallback(aInstance, HandleStateChanged, this)
+    : AnnounceSenderBase(aInstance, AnnounceSender::HandleTimer)
 {
 }
 
 void AnnounceSender::HandleTimer(Timer &aTimer)
 {
-    aTimer.GetOwner<AnnounceSender>().AnnounceSenderBase::HandleTimer();
+    aTimer.Get<AnnounceSender>().AnnounceSenderBase::HandleTimer();
 }
 
 void AnnounceSender::CheckState(void)
 {
-    Mle::MleRouter & mle      = GetInstance().Get<Mle::MleRouter>();
+    Mle::MleRouter & mle      = Get<Mle::MleRouter>();
     uint32_t         interval = kRouterTxInterval;
     uint32_t         period;
     Mac::ChannelMask channelMask;
 
     switch (mle.GetRole())
     {
-    case OT_DEVICE_ROLE_ROUTER:
-    case OT_DEVICE_ROLE_LEADER:
-        period = kRouterTxInterval;
+    case Mle::kRoleRouter:
+    case Mle::kRoleLeader:
+        interval = kRouterTxInterval;
         break;
 
-    case OT_DEVICE_ROLE_CHILD:
-        if (mle.IsRouterRoleEnabled() && (mle.GetDeviceMode() & Mle::ModeTlv::kModeRxOnWhenIdle))
+    case Mle::kRoleChild:
+#if OPENTHREAD_FTD
+        if (mle.IsRouterEligible() && mle.IsRxOnWhenIdle())
         {
-            period = kReedTxInterval;
+            interval = kReedTxInterval;
             break;
         }
+#endif
 
-        // fall through
+        OT_FALL_THROUGH;
 
-    case OT_DEVICE_ROLE_DISABLED:
-    case OT_DEVICE_ROLE_DETACHED:
+    case Mle::kRoleDisabled:
+    case Mle::kRoleDetached:
         Stop();
         ExitNow();
     }
 
-    SuccessOrExit(GetNetif().GetActiveDataset().GetChannelMask(channelMask) == OT_ERROR_NONE, Stop());
+    VerifyOrExit(Get<MeshCoP::ActiveDataset>().GetChannelMask(channelMask) == OT_ERROR_NONE, Stop());
 
     period = interval / channelMask.GetNumberOfChannels();
 
@@ -163,9 +163,6 @@ void AnnounceSender::CheckState(void)
 
     SendAnnounce(channelMask, 0, period, kMaxJitter);
 
-    otLogInfoMle("Starting periodic MLE Announcements tx, period %u, mask %s", period,
-                 channelMask.ToString().AsCString());
-
 exit:
     return;
 }
@@ -176,19 +173,14 @@ void AnnounceSender::Stop(void)
     otLogInfoMle("Stopping periodic MLE Announcements tx");
 }
 
-void AnnounceSender::HandleStateChanged(Notifier::Callback &aCallback, otChangedFlags aFlags)
+void AnnounceSender::HandleNotifierEvents(Events aEvents)
 {
-    aCallback.GetOwner<AnnounceSender>().HandleStateChanged(aFlags);
-}
-
-void AnnounceSender::HandleStateChanged(otChangedFlags aFlags)
-{
-    if ((aFlags & OT_CHANGED_THREAD_ROLE) != 0)
+    if (aEvents.Contains(kEventThreadRoleChanged))
     {
         CheckState();
     }
 }
 
-#endif // OPENTHREAD_CONFIG_ENABLE_ANNOUNCE_SENDER
+#endif // OPENTHREAD_CONFIG_ANNOUNCE_SENDER_ENABLE
 
 } // namespace ot

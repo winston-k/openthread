@@ -36,32 +36,30 @@
 #include <openthread/netdata.h>
 
 #include "common/instance.hpp"
+#include "common/locator-getters.hpp"
 
 using namespace ot;
 
 otError otNetDataGet(otInstance *aInstance, bool aStable, uint8_t *aData, uint8_t *aDataLength)
 {
-    otError   error    = OT_ERROR_NONE;
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    VerifyOrExit(aData != NULL && aDataLength != NULL, error = OT_ERROR_INVALID_ARGS);
+    OT_ASSERT(aData != nullptr && aDataLength != nullptr);
 
-    error = instance.GetThreadNetif().GetNetworkDataLeader().GetNetworkData(aStable, aData, *aDataLength);
-
-exit:
-    return error;
+    return instance.Get<NetworkData::Leader>().GetNetworkData(aStable, aData, *aDataLength);
 }
 
 otError otNetDataGetNextOnMeshPrefix(otInstance *           aInstance,
                                      otNetworkDataIterator *aIterator,
                                      otBorderRouterConfig * aConfig)
 {
-    otError   error    = OT_ERROR_NONE;
-    Instance &instance = *static_cast<Instance *>(aInstance);
+    otError                          error    = OT_ERROR_NONE;
+    Instance &                       instance = *static_cast<Instance *>(aInstance);
+    NetworkData::OnMeshPrefixConfig *config   = static_cast<NetworkData::OnMeshPrefixConfig *>(aConfig);
 
     VerifyOrExit(aIterator && aConfig, error = OT_ERROR_INVALID_ARGS);
 
-    error = instance.GetThreadNetif().GetNetworkDataLeader().GetNextOnMeshPrefix(aIterator, aConfig);
+    error = instance.Get<NetworkData::Leader>().GetNextOnMeshPrefix(*aIterator, *config);
 
 exit:
     return error;
@@ -74,7 +72,22 @@ otError otNetDataGetNextRoute(otInstance *aInstance, otNetworkDataIterator *aIte
 
     VerifyOrExit(aIterator && aConfig, error = OT_ERROR_INVALID_ARGS);
 
-    error = instance.GetThreadNetif().GetNetworkDataLeader().GetNextExternalRoute(aIterator, aConfig);
+    error = instance.Get<NetworkData::Leader>().GetNextExternalRoute(
+        *aIterator, *static_cast<NetworkData::ExternalRouteConfig *>(aConfig));
+
+exit:
+    return error;
+}
+
+otError otNetDataGetNextService(otInstance *aInstance, otNetworkDataIterator *aIterator, otServiceConfig *aConfig)
+{
+    otError   error    = OT_ERROR_NONE;
+    Instance &instance = *static_cast<Instance *>(aInstance);
+
+    VerifyOrExit(aIterator && aConfig, error = OT_ERROR_INVALID_ARGS);
+
+    error = instance.Get<NetworkData::Leader>().GetNextService(*aIterator,
+                                                               *static_cast<NetworkData::ServiceConfig *>(aConfig));
 
 exit:
     return error;
@@ -84,12 +97,24 @@ uint8_t otNetDataGetVersion(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().GetLeaderDataTlv().GetDataVersion();
+    return instance.Get<Mle::MleRouter>().GetLeaderData().GetDataVersion();
 }
 
 uint8_t otNetDataGetStableVersion(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().GetLeaderDataTlv().GetStableDataVersion();
+    return instance.Get<Mle::MleRouter>().GetLeaderData().GetStableDataVersion();
+}
+
+otError otNetDataSteeringDataCheckJoiner(otInstance *aInstance, const otExtAddress *aEui64)
+{
+    return static_cast<Instance *>(aInstance)->Get<NetworkData::Leader>().SteeringDataCheckJoiner(
+        *static_cast<const Mac::ExtAddress *>(aEui64));
+}
+
+otError otNetDataSteeringDataCheckJoinerWithDiscerner(otInstance *aInstance, const otJoinerDiscerner *aDiscerner)
+{
+    return static_cast<Instance *>(aInstance)->Get<NetworkData::Leader>().SteeringDataCheckJoiner(
+        *static_cast<const MeshCoP::JoinerDiscerner *>(aDiscerner));
 }

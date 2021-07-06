@@ -33,8 +33,8 @@ include $(abs_top_nlbuild_autotools_dir)/automake/pre.am
 DIST_SUBDIRS                            = \
     core                                  \
     cli                                   \
+    lib                                   \
     ncp                                   \
-    diag                                  \
     posix                                 \
     $(NULL)
 
@@ -42,6 +42,7 @@ DIST_SUBDIRS                            = \
 
 SUBDIRS                                 = \
     core                                  \
+    lib                                   \
     $(NULL)
 
 if OPENTHREAD_ENABLE_CLI
@@ -50,24 +51,14 @@ endif
 
 if OPENTHREAD_ENABLE_NCP
 SUBDIRS                                += ncp
+else
+if OPENTHREAD_ENABLE_RADIO_ONLY
+SUBDIRS                                += ncp
+endif
 endif
 
-if OPENTHREAD_ENABLE_DIAG
-SUBDIRS                                += diag
-endif
-
-if OPENTHREAD_PLATFORM_POSIX_APP
+if OPENTHREAD_PLATFORM_POSIX
 SUBDIRS                                += posix
 endif
-
-# Always pretty (e.g. for 'make pretty') these subdirectories.
-
-PRETTY_SUBDIRS                          = \
-    cli                                   \
-    core                                  \
-    diag                                  \
-    ncp                                   \
-    posix                                 \
-    $(NULL)
 
 include $(abs_top_nlbuild_autotools_dir)/automake/post.am

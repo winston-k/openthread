@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2016, The OpenThread Authors.
 #  All rights reserved.
@@ -31,6 +31,9 @@ import collections
 import io
 import logging
 import os
+import sys
+import time
+
 import pcap
 import threading
 import traceback
@@ -45,28 +48,30 @@ import sniffer_transport
 
 
 class Sniffer:
-
-    """ Class representing the Sniffing node, whose main task is listening and logging message exchange performed by other nodes. """
+    """ Class representing the Sniffing node, whose main task is listening
+        and logging message exchange performed by other nodes.
+    """
 
     logger = logging.getLogger("sniffer.Sniffer")
 
     RECV_BUFFER_SIZE = 4096
 
-    def __init__(self, nodeid, message_factory):
+    def __init__(self, message_factory):
         """
         Args:
-            nodeid (int): Node identifier
             message_factory (MessageFactory): Class producing messages from data bytes.
         """
 
-        self.nodeid = nodeid
         self._message_factory = message_factory
 
         self._pcap = pcap.PcapCodec(os.getenv('TEST_NAME', 'current'))
+        if __name__ == '__main__':
+            sys.stdout.buffer.write(self._pcap.encode_header())
+            sys.stdout.buffer.flush()
 
         # Create transport
         transport_factory = sniffer_transport.SnifferTransportFactory()
-        self._transport = transport_factory.create_transport(nodeid)
+        self._transport = transport_factory.create_transport()
 
         self._thread = None
         self._thread_alive = threading.Event()
@@ -82,19 +87,27 @@ class Sniffer:
         while self._thread_alive.is_set():
             data, nodeid = self._transport.recv(self.RECV_BUFFER_SIZE)
 
-            self._pcap.append(data)
+            pkt = self._pcap.append(data)
+            if __name__ == '__main__':
+                try:
+                    sys.stdout.buffer.write(pkt)
+                    sys.stdout.flush()
+                except BrokenPipeError:
+                    self._thread_alive.clear()
+                    break
 
             # Ignore any exceptions
-            try:
-                messages = self._message_factory.create(io.BytesIO(data))
-                self.logger.debug("Received messages: {}".format(messages))
-                for msg in messages:
-                    self._buckets[nodeid].put(msg)
+            if self._message_factory is not None:
+                try:
+                    messages = self._message_factory.create(io.BytesIO(data))
+                    self.logger.debug("Received messages: {}".format(messages))
+                    for msg in messages:
+                        self._buckets[nodeid].put(msg)
 
-            except Exception as e:
-                # Just print the exception to the console
-                print("EXCEPTION: %s" % e)
-                traceback.print_exc()
+                except Exception as e:
+                    # Just print the exception to the console
+                    self.logger.error("EXCEPTION: %s" % e)
+                    traceback.print_exc()
 
         self.logger.debug("Sniffer stopped.")
 
@@ -116,7 +129,7 @@ class Sniffer:
 
         self._transport.close()
 
-        self._thread.join()
+        self._thread.join(timeout=1)
         self._thread = None
 
     def set_lowpan_context(self, cid, prefix):
@@ -125,7 +138,8 @@ class Sniffer:
     def get_messages_sent_by(self, nodeid):
         """ Get sniffed messages.
 
-        Note! This method flushes the message queue so calling this method again will return only the newly logged messages.
+        Note! This method flushes the message queue so calling this
+        method again will return only the newly logged messages.
 
         Args:
             nodeid (int): node id
@@ -140,3 +154,19 @@ class Sniffer:
             messages.append(bucket.get_nowait())
 
         return message.MessagesSet(messages)
+
+
+def run_sniffer():
+    sniffer = Sniffer(None)
+    sniffer.start()
+    while sniffer._thread_alive.is_set():
+        try:
+            time.sleep(1)
+        except KeyboardInterrupt:
+            break
+
+    sniffer.stop()
+
+
+if __name__ == '__main__':
+    run_sniffer()

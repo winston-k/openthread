@@ -40,65 +40,69 @@
  * The platform-specific string to insert into the OpenThread version string.
  *
  */
-#define OPENTHREAD_CONFIG_PLATFORM_INFO                        "CC2538"
+#define OPENTHREAD_CONFIG_PLATFORM_INFO "CC2538"
 
 /**
- * @def OPENTHREAD_CONFIG_ENABLE_SOFTWARE_ACK_TIMEOUT
+ * @def OPENTHREAD_CONFIG_MAC_SOFTWARE_ACK_TIMEOUT_ENABLE
  *
  * Define to 1 if you want to enable software ACK timeout logic.
  *
  */
-#define OPENTHREAD_CONFIG_ENABLE_SOFTWARE_ACK_TIMEOUT          1
+#define OPENTHREAD_CONFIG_MAC_SOFTWARE_ACK_TIMEOUT_ENABLE 1
 
 /**
- * @def OPENTHREAD_CONFIG_ENABLE_SOFTWARE_RETRANSMIT
+ * @def OPENTHREAD_CONFIG_MAC_SOFTWARE_RETRANSMIT_ENABLE
  *
  * Define to 1 if you want to enable software retransmission logic.
  *
  */
-#define OPENTHREAD_CONFIG_ENABLE_SOFTWARE_RETRANSMIT           1
+#define OPENTHREAD_CONFIG_MAC_SOFTWARE_RETRANSMIT_ENABLE 1
 
 /**
- * @def OPENTHREAD_CONFIG_ENABLE_SOFTWARE_CSMA_BACKOFF
+ * @def OPENTHREAD_CONFIG_MAC_SOFTWARE_CSMA_BACKOFF_ENABLE
  *
  * Define to 1 if you want to enable software CSMA-CA backoff logic.
  *
  */
-#define OPENTHREAD_CONFIG_ENABLE_SOFTWARE_CSMA_BACKOFF         1
+#define OPENTHREAD_CONFIG_MAC_SOFTWARE_CSMA_BACKOFF_ENABLE 1
 
 /**
- * @def OPENTHREAD_CONFIG_ENABLE_SOFTWARE_ENERGY_SCAN
+ * @def OPENTHREAD_CONFIG_MAC_SOFTWARE_TX_SECURITY_ENABLE
+ *
+ * Define to 1 if you want to enable software transmission security logic.
+ *
+ */
+#define OPENTHREAD_CONFIG_MAC_SOFTWARE_TX_SECURITY_ENABLE 0
+
+/**
+ * @def OPENTHREAD_CONFIG_MAC_SOFTWARE_ENERGY_SCAN_ENABLE
  *
  * Define to 1 if you want to enable software energy scanning logic.
  *
  */
-#define OPENTHREAD_CONFIG_ENABLE_SOFTWARE_ENERGY_SCAN          1
+#define OPENTHREAD_CONFIG_MAC_SOFTWARE_ENERGY_SCAN_ENABLE 1
 
 /**
- * @def SETTINGS_CONFIG_BASE_ADDRESS
+ * @def OPENTHREAD_CONFIG_NCP_UART_ENABLE
  *
- * The actual physical address used for the cc2538 is set by the
- * linker file, the value here is "relative to the base address" set
- * in the linker file.
+ * Define to 1 to enable NCP UART support.
  *
  */
-#define SETTINGS_CONFIG_BASE_ADDRESS                           0
+#define OPENTHREAD_CONFIG_NCP_UART_ENABLE 1
 
 /**
- * @def SETTINGS_CONFIG_PAGE_NUM
+ * @def OPENTHREAD_CONFIG_CC2538_USE_RADIO_RX_INTERRUPT
  *
- * The CC2538 linker script sets aside 2 pages.
+ * Enable support for using interrupt-driven radio reception.  This allows
+ * for a single frame to be received whilst the CPU is busy processing some
+ * other code.
  *
- */
-#define SETTINGS_CONFIG_PAGE_NUM                               2
-
-/**
- * @def SETTINGS_CONFIG_PAGE_SIZE
- *
- * The page size of settings, 2K bytes
+ * To disable interrupts and just rely on polling, set this to 0.
  *
  */
-#define SETTINGS_CONFIG_PAGE_SIZE                              2048
+#ifndef OPENTHREAD_CONFIG_CC2538_USE_RADIO_RX_INTERRUPT
+#define OPENTHREAD_CONFIG_CC2538_USE_RADIO_RX_INTERRUPT 1
+#endif
 
 /**
  * @def OPENTHREAD_CONFIG_CC2538_WITH_CC2592
@@ -115,7 +119,7 @@
  *
  */
 #ifndef OPENTHREAD_CONFIG_CC2538_WITH_CC2592
-#define OPENTHREAD_CONFIG_CC2538_WITH_CC2592                    0
+#define OPENTHREAD_CONFIG_CC2538_WITH_CC2592 0
 #endif
 
 /**
@@ -132,7 +136,7 @@
  *
  */
 #ifndef OPENTHREAD_CONFIG_CC2592_PA_EN_PIN
-#define OPENTHREAD_CONFIG_CC2592_PA_EN_PIN                      3
+#define OPENTHREAD_CONFIG_CC2592_PA_EN_PIN 3
 #endif
 
 /**
@@ -149,7 +153,7 @@
  *
  */
 #ifndef OPENTHREAD_CONFIG_CC2592_LNA_EN_PIN
-#define OPENTHREAD_CONFIG_CC2592_LNA_EN_PIN                     2
+#define OPENTHREAD_CONFIG_CC2592_LNA_EN_PIN 2
 #endif
 
 /**
@@ -166,7 +170,7 @@
  *
  */
 #ifndef OPENTHREAD_CONFIG_CC2592_USE_HGM
-#define OPENTHREAD_CONFIG_CC2592_USE_HGM                        1
+#define OPENTHREAD_CONFIG_CC2592_USE_HGM 1
 #endif
 
 /**
@@ -181,7 +185,7 @@
  *
  */
 #ifndef OPENTHREAD_CONFIG_CC2538_RECEIVE_SENSITIVITY
-#define OPENTHREAD_CONFIG_CC2538_RECEIVE_SENSITIVITY            -88
+#define OPENTHREAD_CONFIG_CC2538_RECEIVE_SENSITIVITY -88
 #endif
 
 /**
@@ -197,7 +201,7 @@
  * this calibrates the RSSI value accordingly.
  */
 #ifndef OPENTHREAD_CONFIG_CC2538_RSSI_OFFSET
-#define OPENTHREAD_CONFIG_CC2538_RSSI_OFFSET                    73
+#define OPENTHREAD_CONFIG_CC2538_RSSI_OFFSET 73
 #endif
 
 /**
@@ -210,7 +214,7 @@
  *
  */
 #ifndef OPENTHREAD_CONFIG_CC2592_HGM_PORT
-#define OPENTHREAD_CONFIG_CC2592_HGM_PORT                       GPIO_D_BASE
+#define OPENTHREAD_CONFIG_CC2592_HGM_PORT GPIO_D_BASE
 #endif
 
 /**
@@ -223,7 +227,7 @@
  *
  */
 #ifndef OPENTHREAD_CONFIG_CC2592_HGM_PIN
-#define OPENTHREAD_CONFIG_CC2592_HGM_PIN                        2
+#define OPENTHREAD_CONFIG_CC2592_HGM_PIN 2
 #endif
 
 /**
@@ -235,7 +239,17 @@
  *
  */
 #ifndef OPENTHREAD_CONFIG_CC2592_HGM_DEFAULT_STATE
-#define OPENTHREAD_CONFIG_CC2592_HGM_DEFAULT_STATE              true
+#define OPENTHREAD_CONFIG_CC2592_HGM_DEFAULT_STATE true
 #endif
 
-#endif  // OPENTHREAD_CORE_CC2538_CONFIG_H_
+/**
+ * @def OPENTHREAD_CONFIG_PLATFORM_FLASH_API_ENABLE
+ *
+ * Define to 1 to enable otPlatFlash* APIs to support non-volatile storage.
+ *
+ * When defined to 1, the platform MUST implement the otPlatFlash* APIs instead of the otPlatSettings* APIs.
+ *
+ */
+#define OPENTHREAD_CONFIG_PLATFORM_FLASH_API_ENABLE 1
+
+#endif // OPENTHREAD_CORE_CC2538_CONFIG_H_

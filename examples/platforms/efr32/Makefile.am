@@ -1,5 +1,5 @@
 #
-#  Copyright (c) 2017, The OpenThread Authors.
+#  Copyright (c) 2020, The OpenThread Authors.
 #  All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -26,122 +26,45 @@
 #  POSSIBILITY OF SUCH DAMAGE.
 #
 
-include $(abs_top_nlbuild_autotools_dir)/automake/pre.am
+# Use automake includes since we cannot use SUBDIRS feature due to cleanup
+# errors - few targets may use the same source file but dependency file is
+# created only once which leads to errors when auto-generated Makefile tries
+# to remove .Po files that were already removed
 
-lib_LIBRARIES                                 = libopenthread-efr32.a
 
-# Do not enable -Wconversion for rail
-override CFLAGS                              := $(filter-out -Wconversion,$(CFLAGS))
-override CXXFLAGS                            := $(filter-out -Wconversion,$(CXXFLAGS))
+# Always package (e.g. for 'make dist') these subdirectories.
+DIST_SUBDIRS = sleepy-demo
 
-# Do not enable -pedantic-errors for rail
-override CFLAGS                              := $(filter-out -pedantic-errors,$(CFLAGS))
-override CXXFLAGS                            := $(filter-out -pedantic-errors,$(CXXFLAGS))
+# Always build (e.g. for 'make all') these subdirectories.
+SUBDIRS = $(NULL)
 
-EFR32_BOARD_DIR                               = $(shell echo $(BOARD) | tr A-Z a-z)
+if OPENTHREAD_EXAMPLES_EFR32MG1
+include efr32mg1/Makefile.am
+# SUBDIRS = sleepy-demo
+# NOTE: The sleepy-demo app currently does not fit on this platform.
+#
+# .../arm-none-eabi/bin/ld: sleepy-demo-mtd section `.bss' will not fit in region `RAM'
+# .../arm-none-eabi/bin/ld: sleepy-demo-mtd section `.nvm' will not fit in region `FLASH'
+# .../arm-none-eabi/bin/ld: region RAM overflowed with stack
+# .../arm-none-eabi/bin/ld: region `FLASH' overflowed by 33428 bytes
+# .../arm-none-eabi/bin/ld: region `RAM' overflowed by 4536 bytes
 
-EFR32MG_SDK_SRCDIR                            = $(top_srcdir)/third_party/silabs/gecko_sdk_suite/v2.5
+else # not OPENTHREAD_EXAMPLES_EFR32MG1
 
-libopenthread_efr32_a_CPPFLAGS                                                = \
-    -D__START=main                                                              \
-    -D__STARTUP_CLEAR_BSS                                                       \
-    -I$(top_srcdir)/include                                                     \
-    -I$(top_srcdir)/examples/platforms                                          \
-    -I$(top_srcdir)/examples/platforms/efr32/$(EFR32_BOARD_DIR)                 \
-    -I$(top_srcdir)/src/core                                                    \
-    -I$(top_srcdir)/third_party/silabs/rail_config                              \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/radio/rail_lib/common                      \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/radio/rail_lib/chip/efr32                  \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/radio/rail_lib/protocol/ieee802154         \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/radio/rail_lib/chip/efr32/rf/common/cortex \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/radio/rail_lib/hal                         \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/radio/rail_lib/hal/efr32                   \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/radio/rail_lib/plugin/pa-conversions       \
-    -I$(EFR32MG_SDK_SRCDIR)/hardware/kit/common/bsp                             \
-    -I$(EFR32MG_SDK_SRCDIR)/hardware/kit/EFR32MG12_$(BOARD)/config              \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/CMSIS/Include                              \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/Device/SiliconLabs/EFR32MG12P/Include      \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/emdrv/common/inc                           \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/emdrv/gpiointerrupt/inc                    \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/emdrv/uartdrv/inc                          \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/emdrv/uartdrv/config                       \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/emdrv/ustimer/inc                          \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/emdrv/dmadrv/inc                           \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/emdrv/dmadrv/config                        \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/emdrv/rtcdrv/inc                           \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/emlib/inc                                  \
-    -I$(EFR32MG_SDK_SRCDIR)/platform/halconfig/inc/hal-config                   \
-    -I$(EFR32MG_SDK_SRCDIR)/util/plugin/plugin-common/fem-control               \
-    -Wno-unused-parameter                                                       \
-    -Wno-missing-field-initializers                                             \
-    $(NULL)
+if OPENTHREAD_EXAMPLES_EFR32MG12
+include efr32mg12/Makefile.am
+endif
 
-PLATFORM_SOURCES                                                              = \
-    alarm.c                                                                     \
-    diag.c                                                                      \
-    fem-control.c                                                               \
-    flash.c                                                                     \
-    logging.c                                                                   \
-    misc.c                                                                      \
-    radio.c                                                                     \
-    random.c                                                                    \
-    startup-gcc.c                                                               \
-    system.c                                                                    \
-    uart.c                                                                      \
-    $(NULL)
+if OPENTHREAD_EXAMPLES_EFR32MG13
+include efr32mg13/Makefile.am
+endif
 
-nodist_libopenthread_efr32_a_SOURCES                                                                                           =  \
-    @top_builddir@/third_party/silabs/rail_config/rail_config.c                                                                   \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/hardware/kit/common/bsp/bsp_bcc.c                                      \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/hardware/kit/common/bsp/bsp_init.c                                     \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/hardware/kit/common/bsp/bsp_stk.c                                      \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/hardware/kit/common/bsp/bsp_stk_leds.c                                 \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/Device/SiliconLabs/EFR32MG12P/Source/system_efr32mg12p.c      \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/Device/SiliconLabs/EFR32MG12P/Source/GCC/startup_efr32mg12p.c \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emdrv/dmadrv/src/dmadrv.c                                     \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emdrv/gpiointerrupt/src/gpiointerrupt.c                       \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emdrv/rtcdrv/src/rtcdriver.c                                  \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emdrv/uartdrv/src/uartdrv.c                                   \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emdrv/ustimer/src/ustimer.c                                   \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emlib/src/em_adc.c                                            \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emlib/src/em_cmu.c                                            \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emlib/src/em_core.c                                           \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emlib/src/em_crypto.c                                         \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emlib/src/em_emu.c                                            \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emlib/src/em_gpio.c                                           \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emlib/src/em_ldma.c                                           \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emlib/src/em_leuart.c                                         \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emlib/src/em_msc.c                                            \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emlib/src/em_rmu.c                                            \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emlib/src/em_rtcc.c                                           \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emlib/src/em_system.c                                         \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emlib/src/em_timer.c                                          \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/emlib/src/em_usart.c                                          \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/radio/rail_lib/hal/efr32/hal_efr.c                            \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/platform/radio/rail_lib/hal/hal_common.c                               \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/util/third_party/mbedtls/library/ecp.c                                 \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/util/third_party/mbedtls/sl_crypto/src/crypto_aes.c                    \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/util/third_party/mbedtls/sl_crypto/src/crypto_ecp.c                    \
-    @top_builddir@/third_party/silabs/gecko_sdk_suite/v2.5/util/third_party/mbedtls/sl_crypto/src/crypto_management.c             \
-    $(NULL)
+if OPENTHREAD_EXAMPLES_EFR32MG21
+include efr32mg21/Makefile.am
+endif
 
-noinst_HEADERS                                                                = \
-    platform-efr32.h                                                            \
-    platform-band.h                                                             \
-    $(NULL)
+if OPENTHREAD_ENABLE_EXECUTABLE
+SUBDIRS += sleepy-demo
+endif
 
-libopenthread_efr32_a_SOURCES                                                 = \
-    $(PLATFORM_SOURCES)                                                         \
-    $(NULL)
-
-PRETTY_FILES                                                                  = \
-    $(PLATFORM_SOURCES)                                                         \
-    $(noinst_HEADERS)                                                           \
-    $(NULL)
-
-Dash                                                                                                 = -
-libopenthread_efr32_a_LIBADD                                                                         = \
-    $(shell find $(top_builddir)/examples/platforms/utils $(Dash)type f $(Dash)name "*.o")             \
-    $(shell find $(top_builddir)/third_party/jlink/SEGGER_RTT_V640/RTT $(Dash)type f $(Dash)name "*.o")
-
-include $(abs_top_nlbuild_autotools_dir)/automake/post.am
+endif # OPENTHREAD_EXAMPLES_EFR32MG1

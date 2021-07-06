@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2018, The OpenThread Authors.
 #  All rights reserved.
@@ -26,14 +26,13 @@
 #  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 #  POSSIBILITY OF SUCH DAMAGE.
 #
-
 """ Module to provide codec utilities for .pcap formatters. """
 
 import struct
 import time
 
 DLT_IEEE802_15_4 = 195
-PCAP_MAGIC_NUMBER = 0xa1b2c3d4
+PCAP_MAGIC_NUMBER = 0xA1B2C3D4
 PCAP_VERSION_MAJOR = 2
 PCAP_VERSION_MINOR = 4
 
@@ -44,16 +43,19 @@ class PcapCodec(object):
     def __init__(self, filename):
         self._pcap_file = open('%s.pcap' % filename, 'wb')
         self._pcap_file.write(self.encode_header())
-        self._epoch = time.time()
 
     def encode_header(self):
         """ Returns a pcap file header. """
-        return struct.pack("<LHHLLLL",
-                           PCAP_MAGIC_NUMBER,
-                           PCAP_VERSION_MAJOR,
-                           PCAP_VERSION_MINOR,
-                           0, 0, 256,
-                           DLT_IEEE802_15_4)
+        return struct.pack(
+            "<LHHLLLL",
+            PCAP_MAGIC_NUMBER,
+            PCAP_VERSION_MAJOR,
+            PCAP_VERSION_MINOR,
+            0,
+            0,
+            256,
+            DLT_IEEE802_15_4,
+        )
 
     def encode_frame(self, frame, sec, usec):
         """ Returns a pcap encapsulation of the given frame. """
@@ -65,7 +67,7 @@ class PcapCodec(object):
 
     def _get_timestamp(self):
         """ Returns the internal timestamp. """
-        timestamp = time.time() - self._epoch
+        timestamp = time.time()
         timestamp_sec = int(timestamp)
         timestamp_usec = int((timestamp - timestamp_sec) * 1000000)
         return timestamp_sec, timestamp_usec
@@ -77,6 +79,7 @@ class PcapCodec(object):
         pkt = self.encode_frame(frame, *timestamp)
         self._pcap_file.write(pkt)
         self._pcap_file.flush()
+        return pkt
 
     def __del__(self):
         self._pcap_file.close()

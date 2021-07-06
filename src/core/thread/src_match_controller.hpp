@@ -36,10 +36,13 @@
 
 #include "openthread-core-config.h"
 
+#include <openthread/error.h>
 #include "common/locator.hpp"
-#include "thread/topology.hpp"
+#include "common/non_copyable.hpp"
 
 namespace ot {
+
+class Child;
 
 /**
  * @addtogroup core-source-match-controller
@@ -63,7 +66,7 @@ namespace ot {
  * address or an extended/long address can be added to the source address match table.
  *
  */
-class SourceMatchController : public InstanceLocator
+class SourceMatchController : public InstanceLocator, private NonCopyable
 {
 public:
     /**

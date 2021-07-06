@@ -31,78 +31,93 @@
  *   This file implements the OpenThread Instance class.
  */
 
-#define WPP_NAME "instance.tmh"
-
 #include "instance.hpp"
 
 #include <openthread/platform/misc.h>
 
 #include "common/logging.hpp"
 #include "common/new.hpp"
-#include "thread/router_table.hpp"
+#include "utils/heap.hpp"
 
 namespace ot {
 
-#if !OPENTHREAD_ENABLE_MULTIPLE_INSTANCES
+#if !OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_ENABLE
 
 // Define the raw storage used for OpenThread instance (in single-instance case).
-static otDEFINE_ALIGNED_VAR(sInstanceRaw, sizeof(Instance), uint64_t);
+OT_DEFINE_ALIGNED_VAR(gInstanceRaw, sizeof(Instance), uint64_t);
 
+#endif
+
+#if OPENTHREAD_MTD || OPENTHREAD_FTD
+#if !OPENTHREAD_CONFIG_HEAP_EXTERNAL_ENABLE
+Utils::Heap Instance::sHeap;
+#endif
 #endif
 
 Instance::Instance(void)
     : mTimerMilliScheduler(*this)
-#if OPENTHREAD_CONFIG_ENABLE_PLATFORM_USEC_TIMER
+#if OPENTHREAD_CONFIG_PLATFORM_USEC_TIMER_ENABLE
     , mTimerMicroScheduler(*this)
 #endif
+    , mRadio(*this)
 #if OPENTHREAD_MTD || OPENTHREAD_FTD
-    , mActiveScanCallback(NULL)
-    , mActiveScanCallbackContext(NULL)
-    , mEnergyScanCallback(NULL)
-    , mEnergyScanCallbackContext(NULL)
     , mNotifier(*this)
+    , mTimeTicker(*this)
     , mSettings(*this)
+    , mSettingsDriver(*this)
+    , mMessagePool(*this)
     , mIp6(*this)
     , mThreadNetif(*this)
-#if OPENTHREAD_ENABLE_APPLICATION_COAP
+#if OPENTHREAD_CONFIG_COAP_API_ENABLE
     , mApplicationCoap(*this)
 #endif
-#if OPENTHREAD_ENABLE_APPLICATION_COAP_SECURE
+#if OPENTHREAD_CONFIG_COAP_SECURE_API_ENABLE
     , mApplicationCoapSecure(*this, /* aLayerTwoSecurity */ true)
 #endif
-#if OPENTHREAD_ENABLE_CHANNEL_MONITOR
+#if OPENTHREAD_CONFIG_CHANNEL_MONITOR_ENABLE
     , mChannelMonitor(*this)
 #endif
-#if OPENTHREAD_ENABLE_CHANNEL_MANAGER
+#if OPENTHREAD_CONFIG_CHANNEL_MANAGER_ENABLE && OPENTHREAD_FTD
     , mChannelManager(*this)
 #endif
-#if OPENTHREAD_CONFIG_ENABLE_ANNOUNCE_SENDER
+#if (OPENTHREAD_CONFIG_DATASET_UPDATER_ENABLE || OPENTHREAD_CONFIG_CHANNEL_MANAGER_ENABLE) && OPENTHREAD_FTD
+    , mDatasetUpdater(*this)
+#endif
+#if OPENTHREAD_CONFIG_ANNOUNCE_SENDER_ENABLE
     , mAnnounceSender(*this)
 #endif
-    , mMessagePool(*this)
+#if OPENTHREAD_CONFIG_OTNS_ENABLE
+    , mOtns(*this)
+#endif
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+    , mRoutingManager(*this)
+#endif
 #endif // OPENTHREAD_MTD || OPENTHREAD_FTD
-#if OPENTHREAD_RADIO || OPENTHREAD_ENABLE_RAW_LINK_API
+#if OPENTHREAD_RADIO || OPENTHREAD_CONFIG_LINK_RAW_ENABLE
     , mLinkRaw(*this)
-#endif // OPENTHREAD_RADIO || OPENTHREAD_ENABLE_RAW_LINK_API
-#if OPENTHREAD_CONFIG_ENABLE_DYNAMIC_LOG_LEVEL
-    , mLogLevel(static_cast<otLogLevel>(OPENTHREAD_CONFIG_INITIAL_LOG_LEVEL))
+#endif
+#if OPENTHREAD_CONFIG_LOG_LEVEL_DYNAMIC_ENABLE
+    , mLogLevel(static_cast<otLogLevel>(OPENTHREAD_CONFIG_LOG_LEVEL_INIT))
 #endif
 #if OPENTHREAD_ENABLE_VENDOR_EXTENSION
     , mExtension(Extension::ExtensionBase::Init(*this))
+#endif
+#if OPENTHREAD_CONFIG_DIAG_ENABLE
+    , mDiags(*this)
 #endif
     , mIsInitialized(false)
 {
 }
 
-#if !OPENTHREAD_ENABLE_MULTIPLE_INSTANCES
+#if !OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_ENABLE
 
 Instance &Instance::InitSingle(void)
 {
     Instance *instance = &Get();
 
-    VerifyOrExit(instance->mIsInitialized == false);
+    VerifyOrExit(!instance->mIsInitialized);
 
-    instance = new (&sInstanceRaw) Instance();
+    instance = new (&gInstanceRaw) Instance();
 
     instance->AfterInit();
 
@@ -112,23 +127,23 @@ exit:
 
 Instance &Instance::Get(void)
 {
-    void *instance = &sInstanceRaw;
+    void *instance = &gInstanceRaw;
 
     return *static_cast<Instance *>(instance);
 }
 
-#else // #if !OPENTHREAD_ENABLE_MULTIPLE_INSTANCES
+#else // #if !OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_ENABLE
 
 Instance *Instance::Init(void *aBuffer, size_t *aBufferSize)
 {
-    Instance *instance = NULL;
+    Instance *instance = nullptr;
 
-    VerifyOrExit(aBufferSize != NULL);
+    VerifyOrExit(aBufferSize != nullptr);
 
     // Make sure the input buffer is big enough
     VerifyOrExit(sizeof(Instance) <= *aBufferSize, *aBufferSize = sizeof(Instance));
 
-    VerifyOrExit(aBuffer != NULL);
+    VerifyOrExit(aBuffer != nullptr);
 
     instance = new (aBuffer) Instance();
 
@@ -138,7 +153,7 @@ exit:
     return instance;
 }
 
-#endif // OPENTHREAD_ENABLE_MULTIPLE_INSTANCES
+#endif // OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_ENABLE
 
 void Instance::Reset(void)
 {
@@ -152,43 +167,41 @@ void Instance::AfterInit(void)
 
     // Restore datasets and network information
 
-    GetSettings().Init();
-    mThreadNetif.GetMle().Restore();
+    Get<Settings>().Init();
+    IgnoreError(Get<Mle::MleRouter>().Restore());
 
-#if OPENTHREAD_CONFIG_ENABLE_AUTO_START_SUPPORT
-
-    if (otThreadGetAutoStart(this))
-    {
-        if (otIp6SetEnabled(this, true) == OT_ERROR_NONE)
-        {
-            // Only try to start Thread if we could bring up the interface
-            if (otThreadSetEnabled(this, true) != OT_ERROR_NONE)
-            {
-                // Bring the interface down if Thread failed to start
-                otIp6SetEnabled(this, false);
-            }
-        }
-    }
-
-#endif
 #endif // OPENTHREAD_MTD || OPENTHREAD_FTD
 
 #if OPENTHREAD_ENABLE_VENDOR_EXTENSION
-    GetExtension().SignalInstanceInit();
+    Get<Extension::ExtensionBase>().SignalInstanceInit();
 #endif
 }
 
 void Instance::Finalize(void)
 {
-    VerifyOrExit(mIsInitialized == true);
+    VerifyOrExit(mIsInitialized);
 
     mIsInitialized = false;
 
 #if OPENTHREAD_MTD || OPENTHREAD_FTD
-    IgnoreReturnValue(otThreadSetEnabled(this, false));
-    IgnoreReturnValue(otIp6SetEnabled(this, false));
-    IgnoreReturnValue(otLinkSetEnabled(this, false));
+    IgnoreError(otThreadSetEnabled(this, false));
+    IgnoreError(otIp6SetEnabled(this, false));
+    IgnoreError(otLinkSetEnabled(this, false));
+
+    Get<Settings>().Deinit();
 #endif
+
+    IgnoreError(Get<Mac::SubMac>().Disable());
+
+#if !OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_ENABLE
+
+    /**
+     * Object was created on buffer, so instead of deleting
+     * the object we call destructor explicitly.
+     */
+    this->~Instance();
+
+#endif // !OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_ENABLE
 
 exit:
     return;
@@ -197,7 +210,7 @@ exit:
 #if OPENTHREAD_MTD || OPENTHREAD_FTD
 void Instance::FactoryReset(void)
 {
-    GetSettings().Wipe();
+    Get<Settings>().Wipe();
     otPlatReset(this);
 }
 
@@ -205,40 +218,13 @@ otError Instance::ErasePersistentInfo(void)
 {
     otError error = OT_ERROR_NONE;
 
-    VerifyOrExit(mThreadNetif.GetMle().GetRole() == OT_DEVICE_ROLE_DISABLED, error = OT_ERROR_INVALID_STATE);
-    GetSettings().Wipe();
+    VerifyOrExit(Get<Mle::MleRouter>().IsDisabled(), error = OT_ERROR_INVALID_STATE);
+    Get<Settings>().Wipe();
 
 exit:
     return error;
 }
 
-void Instance::RegisterActiveScanCallback(otHandleActiveScanResult aCallback, void *aContext)
-{
-    mActiveScanCallback        = aCallback;
-    mActiveScanCallbackContext = aContext;
-}
-
-void Instance::InvokeActiveScanCallback(otActiveScanResult *aResult) const
-{
-    if (mActiveScanCallback != NULL)
-    {
-        mActiveScanCallback(aResult, mActiveScanCallbackContext);
-    }
-}
-
-void Instance::RegisterEnergyScanCallback(otHandleEnergyScanResult aCallback, void *aContext)
-{
-    mEnergyScanCallback        = aCallback;
-    mEnergyScanCallbackContext = aContext;
-}
-
-void Instance::InvokeEnergyScanCallback(otEnergyScanResult *aResult) const
-{
-    if (mEnergyScanCallback != NULL)
-    {
-        mEnergyScanCallback(aResult, mEnergyScanCallbackContext);
-    }
-}
 #endif // OPENTHREAD_MTD || OPENTHREAD_FTD
 
 } // namespace ot

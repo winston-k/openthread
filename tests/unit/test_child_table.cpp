@@ -41,7 +41,7 @@ static ot::Instance *sInstance;
 
 enum
 {
-    kMaxChildren = OPENTHREAD_CONFIG_MAX_CHILDREN,
+    kMaxChildren = OPENTHREAD_CONFIG_MLE_MAX_CHILDREN,
 };
 
 struct TestChild
@@ -51,12 +51,12 @@ struct TestChild
     otExtAddress mExtAddress;
 };
 
-const ChildTable::StateFilter kAllFilters[] = {
-    ChildTable::kInStateValid,
-    ChildTable::kInStateValidOrRestoring,
-    ChildTable::kInStateChildIdRequest,
-    ChildTable::kInStateValidOrAttaching,
-    ChildTable::kInStateAnyExceptInvalid,
+const Child::StateFilter kAllFilters[] = {
+    Child::kInStateValid,
+    Child::kInStateValidOrRestoring,
+    Child::kInStateChildIdRequest,
+    Child::kInStateValidOrAttaching,
+    Child::kInStateAnyExceptInvalid,
 };
 
 // Checks whether a `Child` matches the `TestChild` struct.
@@ -66,8 +66,8 @@ static bool ChildMatches(const Child &aChild, const TestChild &aTestChild)
            (aChild.GetExtAddress() == static_cast<const Mac::ExtAddress &>(aTestChild.mExtAddress));
 }
 
-// Checks whether a `Child::State` matches a `ChildTable::StateFilter`.
-static bool StateMatchesFilter(Child::State aState, ChildTable::StateFilter aFilter)
+// Checks whether a `Child::State` matches a `Child::StateFilter`.
+static bool StateMatchesFilter(Child::State aState, Child::StateFilter aFilter)
 {
     bool  rval = false;
     Child child;
@@ -76,28 +76,36 @@ static bool StateMatchesFilter(Child::State aState, ChildTable::StateFilter aFil
 
     switch (aFilter)
     {
-    case ChildTable::kInStateAnyExceptInvalid:
+    case Child::kInStateAnyExceptInvalid:
         rval = (aState != Child::kStateInvalid);
         break;
 
-    case ChildTable::kInStateValid:
+    case Child::kInStateValid:
         rval = (aState == Child::kStateValid);
         break;
 
-    case ChildTable::kInStateValidOrRestoring:
+    case Child::kInStateValidOrRestoring:
         rval = child.IsStateValidOrRestoring();
         break;
 
-    case ChildTable::kInStateChildIdRequest:
+    case Child::kInStateChildIdRequest:
         rval = (aState == Child::kStateChildIdRequest);
         break;
 
-    case ChildTable::kInStateValidOrAttaching:
+    case Child::kInStateValidOrAttaching:
         rval = child.IsStateValidOrAttaching();
         break;
 
-    case ChildTable::kInStateAnyExceptValidOrRestoring:
+    case Child::kInStateInvalid:
+        rval = child.IsStateInvalid();
+        break;
+
+    case Child::kInStateAnyExceptValidOrRestoring:
         rval = !child.IsStateValidOrRestoring();
+        break;
+
+    case Child::kInStateAny:
+        rval = true;
         break;
     }
 
@@ -105,17 +113,15 @@ static bool StateMatchesFilter(Child::State aState, ChildTable::StateFilter aFil
 }
 
 // Verifies that `ChildTable` contains a given list of `TestChild` entries.
-void VerifyChildTableContent(ChildTable &aTable, uint8_t aChildListLength, const TestChild *aChildList)
+void VerifyChildTableContent(ChildTable &aTable, uint16_t aChildListLength, const TestChild *aChildList)
 {
     printf("Test ChildTable with %d entries", aChildListLength);
 
-    for (uint8_t k = 0; k < OT_ARRAY_LENGTH(kAllFilters); k++)
+    for (Child::StateFilter filter : kAllFilters)
     {
-        ChildTable::StateFilter filter = kAllFilters[k];
-
         // Verify that we can find all children from given list by rloc or extended address.
 
-        for (uint8_t listIndex = 0; listIndex < aChildListLength; listIndex++)
+        for (uint16_t listIndex = 0; listIndex < aChildListLength; listIndex++)
         {
             Child *      child;
             Mac::Address address;
@@ -126,115 +132,103 @@ void VerifyChildTableContent(ChildTable &aTable, uint8_t aChildListLength, const
             }
 
             child = aTable.FindChild(aChildList[listIndex].mRloc16, filter);
-            VerifyOrQuit(child != NULL, "FindChild(rloc) failed");
+            VerifyOrQuit(child != nullptr, "FindChild(rloc) failed");
             VerifyOrQuit(ChildMatches(*child, aChildList[listIndex]), "FindChild(rloc) returned incorrect child");
 
             child = aTable.FindChild(static_cast<const Mac::ExtAddress &>(aChildList[listIndex].mExtAddress), filter);
-            VerifyOrQuit(child != NULL, "FindChild(ExtAddress) failed");
+            VerifyOrQuit(child != nullptr, "FindChild(ExtAddress) failed");
             VerifyOrQuit(ChildMatches(*child, aChildList[listIndex]), "FindChild(ExtAddress) returned incorrect child");
 
             address.SetShort(aChildList[listIndex].mRloc16);
             child = aTable.FindChild(address, filter);
-            VerifyOrQuit(child != NULL, "FindChild(address) failed");
+            VerifyOrQuit(child != nullptr, "FindChild(address) failed");
             VerifyOrQuit(ChildMatches(*child, aChildList[listIndex]), "FindChild(address) returned incorrect child");
 
             address.SetExtended(static_cast<const Mac::ExtAddress &>(aChildList[listIndex].mExtAddress));
             child = aTable.FindChild(address, filter);
-            VerifyOrQuit(child != NULL, "FindChild(address) failed");
+            VerifyOrQuit(child != nullptr, "FindChild(address) failed");
             VerifyOrQuit(ChildMatches(*child, aChildList[listIndex]), "FindChild(address) returned incorrect child");
         }
 
-        // Verify `ChildTable::Iterator` behavior when starting from different child entries.
+        // Verify `ChildTable::Iterator` behavior.
 
-        for (uint8_t listIndex = 0; listIndex <= aChildListLength; listIndex++)
         {
-            Child *startingChild = NULL;
+            ChildTable::Iterator iter(*sInstance, filter);
+            bool                 childObserved[kMaxChildren];
+            uint16_t             numChildren = 0;
 
-            if (listIndex < aChildListLength)
+            memset(childObserved, 0, sizeof(childObserved));
+
+            // Use the iterator and verify that each returned `Child` entry is in the expected list.
+
+            for (; !iter.IsDone(); iter++)
             {
-                startingChild = aTable.FindChild(aChildList[listIndex].mRloc16, ChildTable::kInStateAnyExceptInvalid);
-                VerifyOrQuit(startingChild != NULL, "FindChild() failed");
+                Child *  child    = iter.GetChild();
+                Child &  childRef = *iter;
+                bool     didFind  = false;
+                uint16_t childIndex;
+
+                VerifyOrQuit(child != nullptr, "iter.GetChild() failed");
+                VerifyOrQuit(&childRef == child, "iter.operator*() failed");
+                VerifyOrQuit(iter->GetRloc16() == child->GetRloc16(), "iter.operator->() failed");
+
+                childIndex = aTable.GetChildIndex(*child);
+                VerifyOrQuit(childIndex < aTable.GetMaxChildrenAllowed(), "Child Index is out of bound");
+                VerifyOrQuit(aTable.GetChildAtIndex(childIndex) == child, "GetChildAtIndex() failed");
+
+                for (uint16_t index = 0; index < aChildListLength; index++)
+                {
+                    if (ChildMatches(*iter.GetChild(), aChildList[index]))
+                    {
+                        childObserved[index] = true;
+                        numChildren++;
+                        didFind = true;
+                        break;
+                    }
+                }
+
+                VerifyOrQuit(didFind, "ChildTable::Iterator returned an entry not in the expected list");
             }
 
-            // Test an iterator starting from `startingChild`.
+            // Verify that when iterator is done, it points to `nullptr`.
 
+            VerifyOrQuit(iter.GetChild() == nullptr, "iterator GetChild() failed");
+
+            iter++;
+            VerifyOrQuit(iter.IsDone(), "iterator Advance() (after iterator is done) failed");
+            VerifyOrQuit(iter.GetChild() == nullptr, "iterator GetChild() failed");
+
+            // Verify that the number of children matches the number of entries we get from iterator.
+
+            VerifyOrQuit(aTable.GetNumChildren(filter) == numChildren, "GetNumChildren() failed");
+            VerifyOrQuit(aTable.HasChildren(filter) == (numChildren != 0), "HasChildren() failed");
+
+            // Verify that there is no missing or extra entry between the expected list
+            // and what was observed/returned by the iterator.
+
+            for (uint16_t index = 0; index < aChildListLength; index++)
             {
-                ChildTable::Iterator iter(*sInstance, filter, startingChild);
-                bool                 childObserved[kMaxChildren];
-                uint8_t              numChildren = 0;
-
-                memset(childObserved, 0, sizeof(childObserved));
-
-                // Check if the first entry matches the `startingChild`
-
-                if ((startingChild != NULL) && StateMatchesFilter(startingChild->GetState(), filter))
+                if (StateMatchesFilter(aChildList[index].mState, filter))
                 {
-                    VerifyOrQuit(!iter.IsDone(), "iterator IsDone() failed");
-                    VerifyOrQuit(iter.GetChild() != NULL, "iterator GetChild() failed");
-                    VerifyOrQuit(iter.GetChild() == startingChild,
-                                 "Iterator failed to start from the given child entry");
-
-                    iter++;
-                    iter.Reset();
-                    VerifyOrQuit(iter.GetChild() == startingChild, "iterator Reset() failed");
+                    VerifyOrQuit(childObserved[index], "iterator failed to return an expected entry");
                 }
-
-                // Use the iterator and verify that each returned `Child` entry is in the expected list.
-
-                for (; !iter.IsDone(); iter++)
+                else
                 {
-                    Child * child   = iter.GetChild();
-                    bool    didFind = false;
-                    uint8_t childIndex;
-
-                    VerifyOrQuit(child != NULL, "iter.GetChild() failed");
-
-                    childIndex = aTable.GetChildIndex(*child);
-                    VerifyOrQuit(childIndex < aTable.GetMaxChildrenAllowed(), "Child Index is out of bound");
-                    VerifyOrQuit(aTable.GetChildAtIndex(childIndex) == child, "GetChildAtIndex() failed");
-
-                    for (uint8_t index = 0; index < aChildListLength; index++)
-                    {
-                        if (ChildMatches(*iter.GetChild(), aChildList[index]))
-                        {
-                            childObserved[index] = true;
-                            numChildren++;
-                            didFind = true;
-                            break;
-                        }
-                    }
-
-                    VerifyOrQuit(didFind, "ChildTable::Iterator returned an entry not in the expected list");
+                    VerifyOrQuit(!childObserved[index], "iterator returned an extra unexpected entry");
                 }
+            }
 
-                // Verify that when iterator is done, it points to `NULL`.
+            // Verify the behavior of range-based `for` iteration.
 
-                VerifyOrQuit(iter.GetChild() == NULL, "iterator GetChild() failed");
+            iter.Reset();
 
+            for (Child &child : aTable.Iterate(filter))
+            {
+                VerifyOrQuit(&child == iter.GetChild(), "range-based for loop Iterate() failed");
                 iter++;
-                VerifyOrQuit(iter.IsDone(), "iterator Advance() (after iterator is done) failed");
-                VerifyOrQuit(iter.GetChild() == NULL, "iterator GetChild() failed");
-
-                // Verify that the number of children matches the number of entries we get from iterator.
-
-                VerifyOrQuit(aTable.GetNumChildren(filter) == numChildren, "GetNumChildren() failed");
-                VerifyOrQuit(aTable.HasChildren(filter) == (numChildren != 0), "HasChildren() failed");
-
-                // Verify that there is no missing or extra entry between the expected list
-                // and what was observed/returned by the iterator.
-
-                for (uint8_t index = 0; index < aChildListLength; index++)
-                {
-                    if (StateMatchesFilter(aChildList[index].mState, filter))
-                    {
-                        VerifyOrQuit(childObserved[index], "iterator failed to return an expected entry");
-                    }
-                    else
-                    {
-                        VerifyOrQuit(!childObserved[index], "iterator returned an extra unexpected entry");
-                    }
-                }
             }
+
+            VerifyOrQuit(iter.IsDone(), "range-based for loop Iterate() did not return all entries");
         }
     }
 
@@ -296,15 +290,15 @@ void TestChildTable(void)
         },
     };
 
-    const uint8_t testListLength = OT_ARRAY_LENGTH(testChildList);
+    const uint16_t testListLength = OT_ARRAY_LENGTH(testChildList);
 
-    uint8_t testNumAllowedChildren = 2;
+    uint16_t testNumAllowedChildren = 2;
 
     ChildTable *table;
     otError     error;
 
     sInstance = testInitInstance();
-    VerifyOrQuit(sInstance != NULL, "Null instance");
+    VerifyOrQuit(sInstance != nullptr, "Null instance");
 
     table = &sInstance->Get<ChildTable>();
 
@@ -314,10 +308,8 @@ void TestChildTable(void)
     VerifyOrQuit(table->GetMaxChildrenAllowed() == table->GetMaxChildren(),
                  "GetMaxChildrenAllowed() initial value is incorrect ");
 
-    for (uint8_t i = 0; i < OT_ARRAY_LENGTH(kAllFilters); i++)
+    for (Child::StateFilter filter : kAllFilters)
     {
-        ChildTable::StateFilter filter = kAllFilters[i];
-
         VerifyOrQuit(table->HasChildren(filter) == false, "HasChildren() failed after init");
         VerifyOrQuit(table->GetNumChildren(filter) == 0, "GetNumChildren() failed after init");
     }
@@ -332,12 +324,12 @@ void TestChildTable(void)
                  "Default child table size is too small for the unit test");
 
     // Add the child entries from test list one by one and verify the table content
-    for (uint8_t i = 0; i < testListLength; i++)
+    for (uint16_t i = 0; i < testListLength; i++)
     {
         Child *child;
 
         child = table->GetNewChild();
-        VerifyOrQuit(child != NULL, "GetNewChild() failed");
+        VerifyOrQuit(child != nullptr, "GetNewChild() failed");
 
         child->SetState(testChildList[i].mState);
         child->SetRloc16(testChildList[i].mRloc16);
@@ -354,12 +346,12 @@ void TestChildTable(void)
     VerifyChildTableContent(*table, 0, testChildList);
 
     // Add the child entries from test list in reverse order and verify the table content
-    for (uint8_t i = testListLength; i > 0; i--)
+    for (uint16_t i = testListLength; i > 0; i--)
     {
         Child *child;
 
         child = table->GetNewChild();
-        VerifyOrQuit(child != NULL, "GetNewChild() failed");
+        VerifyOrQuit(child != nullptr, "GetNewChild() failed");
 
         child->SetState(testChildList[i - 1].mState);
         child->SetRloc16(testChildList[i - 1].mRloc16);
@@ -385,15 +377,15 @@ void TestChildTable(void)
     VerifyOrQuit(error == OT_ERROR_NONE, "SetMaxChildrenAllowed() failed");
     VerifyOrQuit(table->GetMaxChildrenAllowed() == testNumAllowedChildren, "GetMaxChildrenAllowed() failed");
 
-    for (uint8_t num = 0; num < testNumAllowedChildren; num++)
+    for (uint16_t num = 0; num < testNumAllowedChildren; num++)
     {
         Child *child = table->GetNewChild();
 
-        VerifyOrQuit(child != NULL, "GetNewChild() failed");
+        VerifyOrQuit(child != nullptr, "GetNewChild() failed");
         child->SetState(Child::kStateValid);
     }
 
-    VerifyOrQuit(table->GetNewChild() == NULL, "GetNewChild() did not fail when table was full");
+    VerifyOrQuit(table->GetNewChild() == nullptr, "GetNewChild() did not fail when table was full");
 
     printf(" -- PASS\n");
 
@@ -402,11 +394,9 @@ void TestChildTable(void)
 
 } // namespace ot
 
-#ifdef ENABLE_TEST_MAIN
 int main(void)
 {
     ot::TestChildTable();
     printf("\nAll tests passed.\n");
     return 0;
 }
-#endif

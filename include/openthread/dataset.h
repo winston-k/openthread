@@ -44,7 +44,7 @@ extern "C" {
 #endif
 
 /**
- * @addtogroup api-thread-general
+ * @addtogroup api-operational-dataset
  *
  * @{
  *
@@ -99,23 +99,13 @@ struct otExtendedPanId
  */
 typedef struct otExtendedPanId otExtendedPanId;
 
-#define OT_MESH_LOCAL_PREFIX_SIZE 8 ///< Size of the Mesh Local Prefix (bytes)
+#define OT_MESH_LOCAL_PREFIX_SIZE OT_IP6_PREFIX_SIZE ///< Size of the Mesh Local Prefix (bytes)
 
 /**
  * This structure represents a Mesh Local Prefix.
  *
  */
-OT_TOOL_PACKED_BEGIN
-struct otMeshLocalPrefix
-{
-    uint8_t m8[OT_MESH_LOCAL_PREFIX_SIZE]; ///< Byte values
-} OT_TOOL_PACKED_END;
-
-/**
- * This structure represents a Mesh Local Prefix
- *
- */
-typedef struct otMeshLocalPrefix otMeshLocalPrefix;
+typedef otIp6NetworkPrefix otMeshLocalPrefix;
 
 #define OT_PSKC_MAX_SIZE 16 ///< Maximum size of the PSKc (bytes)
 
@@ -123,10 +113,17 @@ typedef struct otMeshLocalPrefix otMeshLocalPrefix;
  * This structure represents PSKc.
  *
  */
-typedef struct otPSKc
+OT_TOOL_PACKED_BEGIN
+struct otPskc
 {
     uint8_t m8[OT_PSKC_MAX_SIZE]; ///< Byte values
-} otPSKc;
+} OT_TOOL_PACKED_END;
+
+/**
+ * This structure represents a PSKc.
+ *
+ */
+typedef struct otPskc otPskc;
 
 /**
  * This structure represent Security Policy.
@@ -152,11 +149,21 @@ enum
 };
 
 /**
- * This type represents Channel Mask Page 0.
+ * This type represents Channel Mask.
  *
  */
-typedef uint32_t otChannelMaskPage0;
+typedef uint32_t otChannelMask;
 
+#define OT_CHANNEL_1_MASK (1 << 1)   ///< Channel 1
+#define OT_CHANNEL_2_MASK (1 << 2)   ///< Channel 2
+#define OT_CHANNEL_3_MASK (1 << 3)   ///< Channel 3
+#define OT_CHANNEL_4_MASK (1 << 4)   ///< Channel 4
+#define OT_CHANNEL_5_MASK (1 << 5)   ///< Channel 5
+#define OT_CHANNEL_6_MASK (1 << 6)   ///< Channel 6
+#define OT_CHANNEL_7_MASK (1 << 7)   ///< Channel 7
+#define OT_CHANNEL_8_MASK (1 << 8)   ///< Channel 8
+#define OT_CHANNEL_9_MASK (1 << 9)   ///< Channel 9
+#define OT_CHANNEL_10_MASK (1 << 10) ///< Channel 10
 #define OT_CHANNEL_11_MASK (1 << 11) ///< Channel 11
 #define OT_CHANNEL_12_MASK (1 << 12) ///< Channel 12
 #define OT_CHANNEL_13_MASK (1 << 13) ///< Channel 13
@@ -189,9 +196,9 @@ typedef struct otOperationalDatasetComponents
     bool mIsDelayPresent : 1;            ///< TRUE if Delay Timer is present, FALSE otherwise.
     bool mIsPanIdPresent : 1;            ///< TRUE if PAN ID is present, FALSE otherwise.
     bool mIsChannelPresent : 1;          ///< TRUE if Channel is present, FALSE otherwise.
-    bool mIsPSKcPresent : 1;             ///< TRUE if PSKc is present, FALSE otherwise.
+    bool mIsPskcPresent : 1;             ///< TRUE if PSKc is present, FALSE otherwise.
     bool mIsSecurityPolicyPresent : 1;   ///< TRUE if Security Policy is present, FALSE otherwise.
-    bool mIsChannelMaskPage0Present : 1; ///< TRUE if Channel Mask Page 0 is present, FALSE otherwise.
+    bool mIsChannelMaskPresent : 1;      ///< TRUE if Channel Mask is present, FALSE otherwise.
 } otOperationalDatasetComponents;
 
 /**
@@ -211,11 +218,29 @@ typedef struct otOperationalDataset
     uint32_t                       mDelay;            ///< Delay Timer
     otPanId                        mPanId;            ///< PAN ID
     uint16_t                       mChannel;          ///< Channel
-    otPSKc                         mPSKc;             ///< PSKc
+    otPskc                         mPskc;             ///< PSKc
     otSecurityPolicy               mSecurityPolicy;   ///< Security Policy
-    otChannelMaskPage0             mChannelMaskPage0; ///< Channel Mask Page 0
+    otChannelMask                  mChannelMask;      ///< Channel Mask
     otOperationalDatasetComponents mComponents;       ///< Specifies which components are set in the Dataset.
 } otOperationalDataset;
+
+/**
+ * Maximum length of Operational Dataset in bytes.
+ *
+ */
+#define OT_OPERATIONAL_DATASET_MAX_LENGTH 254
+
+/**
+ * This structure represents an Active or Pending Operational Dataset.
+ *
+ * The Operational Dataset is TLV encoded as specified by Thread.
+ *
+ */
+typedef struct otOperationalDatasetTlvs
+{
+    uint8_t mTlvs[OT_OPERATIONAL_DATASET_MAX_LENGTH]; ///< Operational Dataset TLVs.
+    uint8_t mLength;                                  ///< Size of Operational Dataset in bytes.
+} otOperationalDatasetTlvs;
 
 /**
  * This enumeration represents meshcop TLV types.
@@ -262,6 +287,7 @@ typedef enum otMeshcopTlvType
     OT_MESHCOP_TLV_ENERGY_LIST              = 57,  ///< meshcop Energy List TLV
     OT_MESHCOP_TLV_DISCOVERYREQUEST         = 128, ///< meshcop Discovery Request TLV
     OT_MESHCOP_TLV_DISCOVERYRESPONSE        = 129, ///< meshcop Discovery Response TLV
+    OT_MESHCOP_TLV_JOINERADVERTISEMENT      = 241, ///< meshcop Joiner Advertisement TLV
 } otMeshcopTlvType;
 
 /**
@@ -272,7 +298,7 @@ typedef enum otMeshcopTlvType
  * @returns TRUE if a valid network is present in the Active Operational Dataset, FALSE otherwise.
  *
  */
-OTAPI bool OTCALL otDatasetIsCommissioned(otInstance *aInstance);
+bool otDatasetIsCommissioned(otInstance *aInstance);
 
 /**
  * This function gets the Active Operational Dataset.
@@ -281,23 +307,74 @@ OTAPI bool OTCALL otDatasetIsCommissioned(otInstance *aInstance);
  * @param[out]  aDataset  A pointer to where the Active Operational Dataset will be placed.
  *
  * @retval OT_ERROR_NONE          Successfully retrieved the Active Operational Dataset.
- * @retval OT_ERROR_INVALID_ARGS  @p aDataset was NULL.
+ * @retval OT_ERROR_NOT_FOUND     No corresponding value in the setting store.
  *
  */
-OTAPI otError OTCALL otDatasetGetActive(otInstance *aInstance, otOperationalDataset *aDataset);
+otError otDatasetGetActive(otInstance *aInstance, otOperationalDataset *aDataset);
+
+/**
+ * This function gets the Active Operational Dataset.
+ *
+ * @param[in]   aInstance A pointer to an OpenThread instance.
+ * @param[out]  aDataset  A pointer to where the Active Operational Dataset will be placed.
+ *
+ * @retval OT_ERROR_NONE          Successfully retrieved the Active Operational Dataset.
+ * @retval OT_ERROR_NOT_FOUND     No corresponding value in the setting store.
+ *
+ */
+otError otDatasetGetActiveTlvs(otInstance *aInstance, otOperationalDatasetTlvs *aDataset);
 
 /**
  * This function sets the Active Operational Dataset.
  *
+ * If the dataset does not include an Active Timestamp, the dataset is only partially complete.
+ *
+ * If Thread is enabled on a device that has a partially complete Active Dataset, the device will attempt to attach to
+ * an existing Thread network using any existing information in the dataset. Only the Thread Master Key is needed to
+ * attach to a network.
+ *
+ * If channel is not included in the dataset, the device will send MLE Announce messages across different channels to
+ * find neighbors on other channels.
+ *
+ * If the device successfully attaches to a Thread network, the device will then retrieve the full Active Dataset from
+ * its Parent. Note that a router-capable device will not transition to the Router or Leader roles until it has a
+ * complete Active Dataset.
+ *
  * @param[in]  aInstance A pointer to an OpenThread instance.
  * @param[in]  aDataset  A pointer to the Active Operational Dataset.
  *
- * @retval OT_ERROR_NONE          Successfully set the Active Operational Dataset.
- * @retval OT_ERROR_NO_BUFS       Insufficient buffer space to set the Active Operational Dataset.
- * @retval OT_ERROR_INVALID_ARGS  @p aDataset was NULL.
+ * @retval OT_ERROR_NONE             Successfully set the Active Operational Dataset.
+ * @retval OT_ERROR_NO_BUFS          Insufficient buffer space to set the Active Operational Dataset.
+ * @retval OT_ERROR_NOT_IMPLEMENTED  The platform does not implement settings functionality.
  *
  */
-OTAPI otError OTCALL otDatasetSetActive(otInstance *aInstance, const otOperationalDataset *aDataset);
+otError otDatasetSetActive(otInstance *aInstance, const otOperationalDataset *aDataset);
+
+/**
+ * This function sets the Active Operational Dataset.
+ *
+ * If the dataset does not include an Active Timestamp, the dataset is only partially complete.
+ *
+ * If Thread is enabled on a device that has a partially complete Active Dataset, the device will attempt to attach to
+ * an existing Thread network using any existing information in the dataset. Only the Thread Master Key is needed to
+ * attach to a network.
+ *
+ * If channel is not included in the dataset, the device will send MLE Announce messages across different channels to
+ * find neighbors on other channels.
+ *
+ * If the device successfully attaches to a Thread network, the device will then retrieve the full Active Dataset from
+ * its Parent. Note that a router-capable device will not transition to the Router or Leader roles until it has a
+ * complete Active Dataset.
+ *
+ * @param[in]  aInstance A pointer to an OpenThread instance.
+ * @param[in]  aDataset  A pointer to the Active Operational Dataset.
+ *
+ * @retval OT_ERROR_NONE             Successfully set the Active Operational Dataset.
+ * @retval OT_ERROR_NO_BUFS          Insufficient buffer space to set the Active Operational Dataset.
+ * @retval OT_ERROR_NOT_IMPLEMENTED  The platform does not implement settings functionality.
+ *
+ */
+otError otDatasetSetActiveTlvs(otInstance *aInstance, const otOperationalDatasetTlvs *aDataset);
 
 /**
  * This function gets the Pending Operational Dataset.
@@ -306,10 +383,22 @@ OTAPI otError OTCALL otDatasetSetActive(otInstance *aInstance, const otOperation
  * @param[out]  aDataset  A pointer to where the Pending Operational Dataset will be placed.
  *
  * @retval OT_ERROR_NONE          Successfully retrieved the Pending Operational Dataset.
- * @retval OT_ERROR_INVALID_ARGS  @p aDataset was NULL.
+ * @retval OT_ERROR_NOT_FOUND     No corresponding value in the setting store.
  *
  */
-OTAPI otError OTCALL otDatasetGetPending(otInstance *aInstance, otOperationalDataset *aDataset);
+otError otDatasetGetPending(otInstance *aInstance, otOperationalDataset *aDataset);
+
+/**
+ * This function gets the Pending Operational Dataset.
+ *
+ * @param[in]   aInstance A pointer to an OpenThread instance.
+ * @param[out]  aDataset  A pointer to where the Pending Operational Dataset will be placed.
+ *
+ * @retval OT_ERROR_NONE          Successfully retrieved the Pending Operational Dataset.
+ * @retval OT_ERROR_NOT_FOUND     No corresponding value in the setting store.
+ *
+ */
+otError otDatasetGetPendingTlvs(otInstance *aInstance, otOperationalDatasetTlvs *aDataset);
 
 /**
  * This function sets the Pending Operational Dataset.
@@ -317,12 +406,25 @@ OTAPI otError OTCALL otDatasetGetPending(otInstance *aInstance, otOperationalDat
  * @param[in]  aInstance A pointer to an OpenThread instance.
  * @param[in]  aDataset  A pointer to the Pending Operational Dataset.
  *
- * @retval OT_ERROR_NONE          Successfully set the Pending Operational Dataset.
- * @retval OT_ERROR_NO_BUFS       Insufficient buffer space to set the Pending Operational Dataset.
- * @retval OT_ERROR_INVALID_ARGS  @p aDataset was NULL.
+ * @retval OT_ERROR_NONE             Successfully set the Pending Operational Dataset.
+ * @retval OT_ERROR_NO_BUFS          Insufficient buffer space to set the Pending Operational Dataset.
+ * @retval OT_ERROR_NOT_IMPLEMENTED  The platform does not implement settings functionality.
  *
  */
-OTAPI otError OTCALL otDatasetSetPending(otInstance *aInstance, const otOperationalDataset *aDataset);
+otError otDatasetSetPending(otInstance *aInstance, const otOperationalDataset *aDataset);
+
+/**
+ * This function sets the Pending Operational Dataset.
+ *
+ * @param[in]  aInstance A pointer to an OpenThread instance.
+ * @param[in]  aDataset  A pointer to the Pending Operational Dataset.
+ *
+ * @retval OT_ERROR_NONE             Successfully set the Pending Operational Dataset.
+ * @retval OT_ERROR_NO_BUFS          Insufficient buffer space to set the Pending Operational Dataset.
+ * @retval OT_ERROR_NOT_IMPLEMENTED  The platform does not implement settings functionality.
+ *
+ */
+otError otDatasetSetPendingTlvs(otInstance *aInstance, const otOperationalDatasetTlvs *aDataset);
 
 /**
  * This function sends MGMT_ACTIVE_GET.
@@ -337,11 +439,11 @@ OTAPI otError OTCALL otDatasetSetPending(otInstance *aInstance, const otOperatio
  * @retval OT_ERROR_NO_BUFS       Insufficient buffer space to send.
  *
  */
-OTAPI otError OTCALL otDatasetSendMgmtActiveGet(otInstance *                          aInstance,
-                                                const otOperationalDatasetComponents *aDatasetComponents,
-                                                const uint8_t *                       aTlvTypes,
-                                                uint8_t                               aLength,
-                                                const otIp6Address *                  aAddress);
+otError otDatasetSendMgmtActiveGet(otInstance *                          aInstance,
+                                   const otOperationalDatasetComponents *aDatasetComponents,
+                                   const uint8_t *                       aTlvTypes,
+                                   uint8_t                               aLength,
+                                   const otIp6Address *                  aAddress);
 
 /**
  * This function sends MGMT_ACTIVE_SET.
@@ -355,10 +457,10 @@ OTAPI otError OTCALL otDatasetSendMgmtActiveGet(otInstance *                    
  * @retval OT_ERROR_NO_BUFS       Insufficient buffer space to send.
  *
  */
-OTAPI otError OTCALL otDatasetSendMgmtActiveSet(otInstance *                aInstance,
-                                                const otOperationalDataset *aDataset,
-                                                const uint8_t *             aTlvs,
-                                                uint8_t                     aLength);
+otError otDatasetSendMgmtActiveSet(otInstance *                aInstance,
+                                   const otOperationalDataset *aDataset,
+                                   const uint8_t *             aTlvs,
+                                   uint8_t                     aLength);
 
 /**
  * This function sends MGMT_PENDING_GET.
@@ -373,11 +475,11 @@ OTAPI otError OTCALL otDatasetSendMgmtActiveSet(otInstance *                aIns
  * @retval OT_ERROR_NO_BUFS       Insufficient buffer space to send.
  *
  */
-OTAPI otError OTCALL otDatasetSendMgmtPendingGet(otInstance *                          aInstance,
-                                                 const otOperationalDatasetComponents *aDatasetComponents,
-                                                 const uint8_t *                       aTlvTypes,
-                                                 uint8_t                               aLength,
-                                                 const otIp6Address *                  aAddress);
+otError otDatasetSendMgmtPendingGet(otInstance *                          aInstance,
+                                    const otOperationalDatasetComponents *aDatasetComponents,
+                                    const uint8_t *                       aTlvTypes,
+                                    uint8_t                               aLength,
+                                    const otIp6Address *                  aAddress);
 
 /**
  * This function sends MGMT_PENDING_SET.
@@ -391,35 +493,29 @@ OTAPI otError OTCALL otDatasetSendMgmtPendingGet(otInstance *                   
  * @retval OT_ERROR_NO_BUFS       Insufficient buffer space to send.
  *
  */
-OTAPI otError OTCALL otDatasetSendMgmtPendingSet(otInstance *                aInstance,
-                                                 const otOperationalDataset *aDataset,
-                                                 const uint8_t *             aTlvs,
-                                                 uint8_t                     aLength);
+otError otDatasetSendMgmtPendingSet(otInstance *                aInstance,
+                                    const otOperationalDataset *aDataset,
+                                    const uint8_t *             aTlvs,
+                                    uint8_t                     aLength);
 
 /**
- * Get minimal delay timer.
+ * This function generates PSKc from a given pass-phrase, network name, and extended PAN ID.
  *
- * @param[in]  aInstance A pointer to an OpenThread instance.
+ * PSKc is used to establish the Commissioner Session.
  *
- * @retval the value of minimal delay timer (in ms).
+ * @param[in]  aPassPhrase   The commissioning pass-phrase.
+ * @param[in]  aNetworkName  The network name for PSKc computation.
+ * @param[in]  aExtPanId     The extended PAN ID for PSKc computation.
+ * @param[out] aPskc         A pointer to variable to output the generated PSKc.
  *
- */
-OTAPI uint32_t OTCALL otDatasetGetDelayTimerMinimal(otInstance *aInstance);
-
-/**
- * Set minimal delay timer.
- *
- * @note This API is reserved for testing and demo purposes only. Changing settings with
- * this API will render a production application non-compliant with the Thread Specification.
- *
- * @param[in]  aInstance           A pointer to an OpenThread instance.
- * @param[in]  aDelayTimerMinimal  The value of minimal delay timer (in ms).
- *
- * @retval  OT_ERROR_NONE          Successfully set minimal delay timer.
- * @retval  OT_ERROR_INVALID_ARGS  If @p aDelayTimerMinimal is not valid.
+ * @retval OT_ERROR_NONE          Successfully generate PSKc.
+ * @retval OT_ERROR_INVALID_ARGS  If any of the input arguments is invalid.
  *
  */
-OTAPI otError OTCALL otDatasetSetDelayTimerMinimal(otInstance *aInstance, uint32_t aDelayTimerMinimal);
+otError otDatasetGeneratePskc(const char *           aPassPhrase,
+                              const otNetworkName *  aNetworkName,
+                              const otExtendedPanId *aExtPanId,
+                              otPskc *               aPskc);
 
 /**
  * @}

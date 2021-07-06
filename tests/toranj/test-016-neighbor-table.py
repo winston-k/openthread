@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2018, The OpenThread Authors.
 #  All rights reserved.
@@ -26,11 +26,10 @@
 #  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 #  POSSIBILITY OF SUCH DAMAGE.
 
-import time
 import wpan
 from wpan import verify
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test description: Neighbor table
 #
 # - Network with NUM_ROUTERS(= 2) routers, all within range of each other.
@@ -39,10 +38,10 @@ from wpan import verify
 #
 
 test_name = __file__[:-3] if __file__.endswith('.py') else __file__
-print '-' * 120
-print 'Starting \'{}\''.format(test_name)
+print('-' * 120)
+print('Starting \'{}\''.format(test_name))
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Creating `wpan.Nodes` instances
 
 speedup = 4
@@ -60,36 +59,36 @@ for num in range(NUM_CHILDREN):
     children.append(wpan.Node())
 
 # end-device per router used for quick promotion to router role
-ed = [ 0 ]
+ed = [0]
 for num in range(1, NUM_ROUTERS):
     ed.append(wpan.Node())
 
 all_nodes = routers + children + ed
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Init all nodes
 
 wpan.Node.init_all_nodes()
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Build network topology
 #
 
-# whitelist all routers with one another
+# allowlist all routers with one another
 for i in range(NUM_ROUTERS):
     for j in range(NUM_ROUTERS):
         if i != j:
-            routers[i].whitelist_node(routers[j])
+            routers[i].allowlist_node(routers[j])
 
 # All children should attach to routers[0]
 for num in range(NUM_CHILDREN):
-    children[num].whitelist_node(routers[0])
-    routers[0].whitelist_node(children[num])
+    children[num].allowlist_node(routers[0])
+    routers[0].allowlist_node(children[num])
 
-# whiltelist the end-device ed with its corresponding router
+# allowlist the end-device ed with its corresponding router
 for num in range(1, NUM_ROUTERS):
-    ed[num].whitelist_node(routers[num])
-    routers[num].whitelist_node(ed[num])
+    ed[num].allowlist_node(routers[num])
+    routers[num].allowlist_node(ed[num])
 
 routers[0].form("neigh-table")
 
@@ -101,9 +100,9 @@ for num in range(1, NUM_ROUTERS):
 
 for num in range(NUM_CHILDREN):
     children[num].join_node(routers[0], wpan.JOIN_TYPE_SLEEPY_END_DEVICE)
-    children[num].set(wpan.WPAN_POLL_INTERVAL,'300')
+    children[num].set(wpan.WPAN_POLL_INTERVAL, '300')
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test implementation
 
 for router in routers[1:]:
@@ -119,33 +118,32 @@ for child in children:
     ext_addr = child.get(wpan.WPAN_EXT_ADDRESS)[1:-1]
     for entry in neighbor_table:
         if entry.ext_address == ext_addr:
-            break;
+            break
     else:
         raise wpan.VerifyError('Failed to find a child entry for extended address {} in table'.format(ext_addr))
 
     verify(int(entry.rloc16, 16) == int(child.get(wpan.WPAN_THREAD_RLOC16), 16))
-    verify(entry.is_rx_on_when_idle() == False)
-    verify(entry.is_ftd() == False)
-    verify(entry.is_child() == True)
+    verify(entry.is_rx_on_when_idle() is False)
+    verify(entry.is_ftd() is False)
+    verify(entry.is_child())
 
 # Verify that all other routers are seen in the neighbor table
 for router in routers[1:]:
     ext_addr = router.get(wpan.WPAN_EXT_ADDRESS)[1:-1]
     for entry in neighbor_table:
         if entry.ext_address == ext_addr:
-            break;
+            break
     else:
         raise wpan.VerifyError('Failed to find a router entry for extended address {} in table'.format(ext_addr))
 
     verify(int(entry.rloc16, 16) == int(router.get(wpan.WPAN_THREAD_RLOC16), 16))
-    verify(entry.is_rx_on_when_idle() == True)
-    verify(entry.is_ftd() == True)
-    verify(entry.is_child() == False)
+    verify(entry.is_rx_on_when_idle())
+    verify(entry.is_ftd())
+    verify(entry.is_child() is False)
 
-
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test finished
 
 wpan.Node.finalize_all_nodes()
 
-print '\'{}\' passed.'.format(test_name)
+print('\'{}\' passed.'.format(test_name))

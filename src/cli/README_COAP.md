@@ -10,7 +10,7 @@ Use the `COAP=1` build switch to enable CoAP API support.
 
 ```bash
 > ./bootstrap
-> make -f examples/Makefile-posix COAP=1
+> make -f examples/Makefile-simulation COAP=1
 ```
 
 ### Form Network
@@ -54,14 +54,18 @@ coap response sent
 
 ## Command List
 
-* [help](#help)
-* [delete](#delete-address-uri-path-type-payload)
-* [get](#get-address-uri-path-type)
-* [post](#post-address-uri-path-type-payload)
-* [put](#put-address-uri-path-type-payload)
-# [resource](#resource-uri-path)
-* [start](#start)
-* [stop](#stop)
+- [help](#help)
+- [cancel](#cancel)
+- [delete](#delete-address-uri-path-type-payload)
+- [get](#get-address-uri-path-type)
+- [observe](#observe-address-uri-path-type)
+- [parameters](#parameters)
+- [post](#post-address-uri-path-type-payload)
+- [put](#put-address-uri-path-type-payload)
+- [resource](#resource-uri-path)
+- [set](#set-new-content)
+- [start](#start)
+- [stop](#stop)
 
 ## Command Details
 
@@ -70,11 +74,15 @@ coap response sent
 ```bash
 > coap help
 help
+cancel
 delete
 get
+observe
+parameters
 post
 put
 resource
+set
 start
 stop
 Done
@@ -82,12 +90,21 @@ Done
 
 List the CoAP CLI commands.
 
+### cancel
+
+Request the cancellation of an existing observation subscription to a remote resource.
+
+```bash
+> coap cancel
+Done
+```
+
 ### delete \<address\> \<uri-path\> \[type\] \[payload\]
 
-* address: IPv6 address of the CoAP server.
-* uri-path: URI path of the resource.
-* type: "con" for Confirmable or "non-con" for Non-confirmable (default).
-* payload: CoAP request payload.
+- address: IPv6 address of the CoAP server.
+- uri-path: URI path of the resource.
+- type: "con" for Confirmable or "non-con" for Non-confirmable (default).
+- payload: CoAP request payload.
 
 ```bash
 > coap delete fdde:ad00:beef:0:2780:9423:166c:1aac test-resource con payload
@@ -96,36 +113,101 @@ Done
 
 ### get \<address\> \<uri-path\> \[type\]
 
-* address: IPv6 address of the CoAP server.
-* uri-path: URI path of the resource.
-* type: "con" for Confirmable or "non-con" for Non-confirmable (default).
+- address: IPv6 address of the CoAP server.
+- uri-path: URI path of the resource.
+- type: "con" for Confirmable or "non-con" for Non-confirmable (default). Use "block-<block-size>" if the response should be transferred block-wise. ("block-16","block-32","block-64","block-128","block-256","block-512","block-1024")
 
 ```bash
 > coap get fdde:ad00:beef:0:2780:9423:166c:1aac test-resource
 Done
 ```
 
+```bash
+> coap get fdde:ad00:beef:0:2780:9423:166c:1aac test-resource block-1024
+Done
+```
+
+### observe \<address\> \<uri-path\> \[type\]
+
+This is the same a `get`, but the `Observe` parameter will be sent, set to 0 triggering a subscription request.
+
+- address: IPv6 address of the CoAP server.
+- uri-path: URI path of the resource.
+- type: "con" for Confirmable or "non-con" for Non-confirmable (default).
+
+```bash
+> coap observe fdde:ad00:beef:0:2780:9423:166c:1aac test-resource
+Done
+```
+
+### parameters \<type\> \["default"|<ack_timeout\> <ack_random_factor_numerator\> <ack_random_factor_denominator\> <max_retransmit\>\]
+
+Sets transmission parameters for the following interactions.
+
+- type: "request" for CoAP requests and "response" for CoAP responses.
+
+If no more parameters are given, the command prints the current configuration:
+
+```bash
+> coap parameters request
+Transmission parameters for request:
+ACK_TIMEOUT=1000 ms, ACK_RANDOM_FACTOR=255/254, MAX_RETRANSMIT=2
+Done
+```
+
+If `"default"` is given, the command sets the default configuration for the transmission parameters.
+
+```bash
+> coap parameters request default
+Transmission parameters for request:
+default
+Done
+```
+
+Also, you can specify the transmission parameters in the command line:
+
+- ack_timeout (0~UINT32_MAX): RFC7252 ACK_TIMEOUT, in milliseconds.
+- ack_random_factor_numerator, ack_random_factor_denominator (0~255): RFC7252 ACK_RANDOM_FACTOR=ack_random_factor_numerator/ack_random_factor_denominator.
+- max_retransmit (0~255): RFC7252 MAX_RETRANSMIT.
+
+```bash
+> coap parameters request 1000 255 254 2
+Transmission parameters for request:
+ACK_TIMEOUT=1000 ms, ACK_RANDOM_FACTOR=255/254, MAX_RETRANSMIT=2
+Done
+```
+
 ### post \<address\> \<uri-path\> \[type\] \[payload\]
 
-* address: IPv6 address of the CoAP server.
-* uri-path: URI path of the resource.
-* type: "con" for Confirmable or "non-con" for Non-confirmable (default).
-* payload: CoAP request payload.
+- address: IPv6 address of the CoAP server.
+- uri-path: URI path of the resource.
+- type: "con" for Confirmable or "non-con" for Non-confirmable (default). Use "block-<block-size>" to send blocks with random payload. ("block-16","block-32","block-64","block-128","block-256","block-512","block-1024")
+- payload: CoAP request payload. If \[type\] is "block-<block-size>", the amount of blocks to be sent can be set here.
 
 ```bash
 > coap post fdde:ad00:beef:0:2780:9423:166c:1aac test-resource con payload
 Done
 ```
 
+```bash
+> coap post fdde:ad00:beef:0:2780:9423:166c:1aac test-resource block-1024 10
+Done
+```
+
 ### put \<address\> \<uri-path\> \[type\] \[payload\]
 
-* address: IPv6 address of the CoAP server.
-* uri-path: URI path of the resource.
-* type: "con" for Confirmable or "non-con" for Non-confirmable (default).
-* payload: CoAP request payload.
+- address: IPv6 address of the CoAP server.
+- uri-path: URI path of the resource.
+- type: "con" for Confirmable or "non-con" for Non-confirmable (default). Use "block-<block-size>" to send blocks with random payload. ("block-16","block-32","block-64","block-128","block-256","block-512","block-1024")
+- payload: CoAP request payload. If \[type\] is "block-<block-size>", the amount of blocks to be sent can be set here.
 
 ```bash
 > coap put fdde:ad00:beef:0:2780:9423:166c:1aac test-resource con payload
+Done
+```
+
+```bash
+> coap put fdde:ad00:beef:0:2780:9423:166c:1aac test-resource block-1024 10
 Done
 ```
 
@@ -138,6 +220,15 @@ Sets the URI path for the test resource.
 Done
 > coap resource
 test-resource
+Done
+```
+
+### set \[new-content\]
+
+Sets the content sent by the test resource. If a CoAP client is observing the resource, a notification is sent to that client.
+
+```bash
+> coap set Testing123
 Done
 ```
 

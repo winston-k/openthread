@@ -38,6 +38,8 @@
 
 #include <openthread/platform/radio.h>
 
+#include "common/clearable.hpp"
+#include "common/locator.hpp"
 #include "common/string.hpp"
 
 namespace ot {
@@ -58,19 +60,13 @@ namespace ot {
  * The success rate is maintained using an exponential moving IIR averaging filter with a `uint16_t` as the storage.
  *
  */
-class SuccessRateTracker
+class SuccessRateTracker : public Clearable<SuccessRateTracker>
 {
 public:
     enum
     {
         kMaxRateValue = 0xffff, ///< Indicates value corresponding to maximum (failure/success) rate of 100%.
     };
-
-    /**
-     * This method resets the tracker to its initialized state, setting success rate to 100%.
-     *
-     */
-    void Reset(void) { mFailureRate = 0; }
 
     /**
      * This method adds a sample (success or failure) to `SuccessRateTracker`.
@@ -112,7 +108,7 @@ private:
  * The average is maintained using an adaptive exponentially weighted moving filter.
  *
  */
-class RssAverager
+class RssAverager : public Clearable<RssAverager>
 {
 public:
     enum
@@ -125,12 +121,6 @@ public:
      *
      */
     typedef String<kStringSize> InfoString;
-
-    /**
-     * This method reset the averager and clears the average value.
-     *
-     */
-    void Reset(void);
 
     /**
      * This method indicates whether the averager contains an average (i.e., at least one RSS value has been added).
@@ -211,11 +201,54 @@ private:
 };
 
 /**
+ * This class implements a Link Quality Indicator (LQI) averager.
+ *
+ * It maintains the exponential moving average value of LQI.
+ *
+ */
+class LqiAverager : public Clearable<LqiAverager>
+{
+public:
+    /**
+     * This method adds a link quality indicator (LQI) value to the average.
+     *
+     * @param[in] aLqi  Link Quality Indicator value to be added to the average.
+     *
+     */
+    void Add(uint8_t aLqi);
+
+    /**
+     * This method returns the current average link quality value maintained by the averager.
+     *
+     * @returns The current average value.
+     *
+     */
+    uint8_t GetAverage(void) const { return mAverage; }
+
+    /**
+     * This method returns the count of frames calculated so far.
+     *
+     * @returns The count of frames calculated.
+     *
+     */
+    uint8_t GetCount(void) const { return mCount; }
+
+private:
+    enum
+    {
+        kCoeffBitShift = 3, ///< Coefficient used for exponentially weighted filter (1 << kCoeffBitShift).
+    };
+
+    uint8_t mAverage; ///< The average link quality indicator value.
+    uint8_t mCount;   ///< Number of LQI values added to averager so far.
+};
+
+/**
  * This class encapsulates/stores all relevant information about quality of a link, including average received signal
  * strength (RSS), last RSS, link margin, and link quality.
  *
  */
-class LinkQualityInfo
+class LinkQualityInfo : public InstanceLocatorInit
 {
 public:
     enum
@@ -230,6 +263,14 @@ public:
     typedef String<kInfoStringSize> InfoString;
 
     /**
+     * This method initializes the `LinkQualityInfo` object.
+     *
+     * @param[in] aInstance  A reference to the OpenThread instance.
+     *
+     */
+    void Init(Instance &aInstance) { InstanceLocatorInit::Init(aInstance); }
+
+    /**
      * This method clears the all the data in the object.
      *
      */
@@ -238,11 +279,10 @@ public:
     /**
      * This method adds a new received signal strength (RSS) value to the average.
      *
-     * @param[in] aNoiseFloor  The noise floor value (in dBm).
      * @param[in] aRss         A new received signal strength value (in dBm) to be added to the average.
      *
      */
-    void AddRss(int8_t aNoiseFloor, int8_t aRss);
+    void AddRss(int8_t aRss);
 
     /**
      * This method returns the current average received signal strength value.
@@ -273,12 +313,10 @@ public:
      * This method returns the link margin. The link margin is calculated using the link's current average received
      * signal strength (RSS) and average noise floor.
      *
-     * @param[in]  aNoiseFloor  The noise floor value (in dBm).
-     *
      * @returns Link margin derived from average received signal strength and average noise floor.
      *
      */
-    uint8_t GetLinkMargin(int8_t aNoiseFloor) const { return ConvertRssToLinkMargin(aNoiseFloor, GetAverageRss()); }
+    uint8_t GetLinkMargin(void) const;
 
     /**
      * Returns the current one-way link quality value. The link quality value is a number 0-3.
@@ -290,8 +328,6 @@ public:
      * In order to ensure that a link margin near the boundary of two different link quality values does not cause
      * frequent changes, a hysteresis of 2 dB is applied when determining the link quality. For example, the average
      * link margin must be at least 12 dB to change a quality 1 link to a quality 2 link.
-     *
-     * @param[in]  aNoiseFloor  The noise floor value (in dBm).
      *
      * @returns The current link quality value (value 0-3 as per Thread specification).
      *
@@ -305,8 +341,6 @@ public:
      *
      */
     int8_t GetLastRss(void) const { return mLastRss; }
-
-#if OPENTHREAD_CONFIG_ENABLE_TX_ERROR_RATE_TRACKING
 
     /**
      * This method adds a MAC frame transmission status (success/failure) and updates the frame tx error rate.
@@ -357,8 +391,6 @@ public:
      *
      */
     uint16_t GetMessageErrorRate(void) const { return mMessageErrorRate.GetFailureRate(); }
-
-#endif // OPENTHREAD_CONFIG_ENABLE_TX_ERROR_RATE_TRACKING
 
     /**
      * This method converts a received signal strength value to a link margin value.
@@ -436,10 +468,9 @@ private:
     RssAverager mRssAverager;
     uint8_t     mLinkQuality;
     int8_t      mLastRss;
-#if OPENTHREAD_CONFIG_ENABLE_TX_ERROR_RATE_TRACKING
+
     SuccessRateTracker mFrameErrorRate;
     SuccessRateTracker mMessageErrorRate;
-#endif
 };
 
 /**

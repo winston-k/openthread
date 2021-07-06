@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2017, The OpenThread Authors.
 #  All rights reserved.
@@ -28,11 +28,10 @@
 #
 
 import re
-import time
 import unittest
 
-import node
 import config
+import thread_cert
 
 LEADER = 1
 ROUTER1 = 2
@@ -40,70 +39,60 @@ ROUTER2 = 3
 
 SRV_0_ID = 0
 SRV_0_ENT_NUMBER = '123'
-SRV_0_SERVICE_DATA = 'foo'
-SRV_0_SERVER_DATA = 'bar'
+SRV_0_SERVICE_DATA = '123'
+SRV_0_SERVER_DATA = 'abc'
 
 SRV_1_ID = 1
 SRV_1_ENT_NUMBER = '234'
-SRV_1_SERVICE_DATA = 'baz'
-SRV_1_SERVER_DATA = 'qux'
+SRV_1_SERVICE_DATA = '456'
+SRV_1_SERVER_DATA = 'def'
 
-class Test_Service(unittest.TestCase):
-    def setUp(self):
-        self.simulator = config.create_default_simulator()
 
-        self.nodes = {}
-        for i in range(1,4):
-            self.nodes[i] = node.Node(i, simulator=self.simulator)
+class Test_Service(thread_cert.TestCase):
+    SUPPORT_NCP = False
 
-        self.nodes[LEADER].set_panid(0xface)
-        self.nodes[LEADER].set_mode('rsdn')
-        self.nodes[LEADER].add_whitelist(self.nodes[ROUTER1].get_addr64())
-        self.nodes[LEADER].add_whitelist(self.nodes[ROUTER2].get_addr64())
-        self.nodes[LEADER].enable_whitelist()
-        self.nodes[LEADER].set_channel(12)
-        self.nodes[LEADER].set_network_name('OpenThread')
-
-        self.nodes[ROUTER1].set_panid(0xface)
-        self.nodes[ROUTER1].set_mode('rsdn')
-        self.nodes[ROUTER1].add_whitelist(self.nodes[LEADER].get_addr64())
-        self.nodes[ROUTER1].add_whitelist(self.nodes[ROUTER2].get_addr64())
-        self.nodes[ROUTER1].enable_whitelist()
-        self.nodes[ROUTER1].set_channel(12)
-        self.nodes[ROUTER1].set_network_name('OpenThread')
-        self.nodes[ROUTER1].set_router_selection_jitter(1)
-
-        self.nodes[ROUTER2].set_panid(0xface)
-        self.nodes[ROUTER2].set_mode('rsdn')
-        self.nodes[ROUTER2].add_whitelist(self.nodes[LEADER].get_addr64())
-        self.nodes[ROUTER2].add_whitelist(self.nodes[ROUTER1].get_addr64())
-        self.nodes[ROUTER2].enable_whitelist()
-        self.nodes[ROUTER2].set_channel(12)
-        self.nodes[ROUTER2].set_network_name('OpenThread')
-        self.nodes[ROUTER2].set_router_selection_jitter(1)
-
-    def tearDown(self):
-        for node in list(self.nodes.values()):
-            node.stop()
-            node.destroy()
-        self.simulator.stop()
+    TOPOLOGY = {
+        LEADER: {
+            'channel': 12,
+            'mode': 'rdn',
+            'network_name': 'OpenThread',
+            'panid': 0xface,
+            'allowlist': [ROUTER1, ROUTER2]
+        },
+        ROUTER1: {
+            'channel': 12,
+            'mode': 'rdn',
+            'network_name': 'OpenThread',
+            'panid': 0xface,
+            'router_selection_jitter': 1,
+            'allowlist': [LEADER, ROUTER2]
+        },
+        ROUTER2: {
+            'channel': 12,
+            'mode': 'rdn',
+            'network_name': 'OpenThread',
+            'panid': 0xface,
+            'router_selection_jitter': 1,
+            'allowlist': [LEADER, ROUTER1]
+        },
+    }
 
     def hasAloc(self, node_id, service_id):
         for addr in self.nodes[node_id].get_ip6_address(config.ADDRESS_TYPE.ALOC):
             m = re.match('.*:fc(..)$', addr, re.I)
             if m is not None:
-                if m.group(1) == str(service_id + 10): # for service_id=3 look for '...:fc13'
+                if m.group(1) == str(service_id + 10):  # for service_id=3 look for '...:fc13'
                     return True
 
         return False
 
     def pingFromAll(self, addr):
-        for node in list(self.nodes.values()):
-            self.assertTrue(node.ping(addr))
+        for n in list(self.nodes.values()):
+            self.assertTrue(n.ping(addr))
 
     def failToPingFromAll(self, addr):
-        for node in list(self.nodes.values()):
-            self.assertFalse(node.ping(addr, timeout=3))
+        for n in list(self.nodes.values()):
+            self.assertFalse(n.ping(addr, timeout=3))
 
     def test(self):
         self.nodes[LEADER].start()
@@ -206,6 +195,7 @@ class Test_Service(unittest.TestCase):
 
         self.failToPingFromAll(aloc0)
         self.failToPingFromAll(aloc1)
+
 
 if __name__ == '__main__':
     unittest.main()

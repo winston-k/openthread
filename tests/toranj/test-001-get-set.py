@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2018, The OpenThread Authors.
 #  All rights reserved.
@@ -28,31 +28,31 @@
 
 from wpan import verify
 import wpan
-import time
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test description: simple wpanctl get and set commands
 
 test_name = __file__[:-3] if __file__.endswith('.py') else __file__
-print '-' * 120
-print 'Starting \'{}\''.format(test_name)
+print('-' * 120)
+print('Starting \'{}\''.format(test_name))
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Creating `wpan.Nodes` instances
 
 node = wpan.Node()
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Init all nodes
 
 wpan.Node.init_all_nodes()
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test implementation
 
 verify(node.get(wpan.WPAN_STATE) == wpan.STATE_OFFLINE)
 
-# set some of properties and check and verify that the value is indeed changed...
+# set some of properties and check and verify that the value is indeed
+# changed...
 
 node.set(wpan.WPAN_NAME, 'test-network')
 verify(node.get(wpan.WPAN_NAME) == '"test-network"')
@@ -69,14 +69,14 @@ verify(node.get(wpan.WPAN_XPANID) == '0x1020031510006016')
 node.set(wpan.WPAN_KEY, '0123456789abcdeffecdba9876543210', binary_data=True)
 verify(node.get(wpan.WPAN_KEY) == '[0123456789ABCDEFFECDBA9876543210]')
 
-node.set(wpan.WPAN_MAC_WHITELIST_ENABLED, '1')
-verify(node.get(wpan.WPAN_MAC_WHITELIST_ENABLED) == 'true')
+node.set(wpan.WPAN_MAC_ALLOWLIST_ENABLED, '1')
+verify(node.get(wpan.WPAN_MAC_ALLOWLIST_ENABLED) == 'true')
 
-node.set(wpan.WPAN_MAC_WHITELIST_ENABLED, '0')
-verify(node.get(wpan.WPAN_MAC_WHITELIST_ENABLED) == 'false')
+node.set(wpan.WPAN_MAC_ALLOWLIST_ENABLED, '0')
+verify(node.get(wpan.WPAN_MAC_ALLOWLIST_ENABLED) == 'false')
 
-node.set(wpan.WPAN_MAC_WHITELIST_ENABLED, 'true')
-verify(node.get(wpan.WPAN_MAC_WHITELIST_ENABLED) == 'true')
+node.set(wpan.WPAN_MAC_ALLOWLIST_ENABLED, 'true')
+verify(node.get(wpan.WPAN_MAC_ALLOWLIST_ENABLED) == 'true')
 
 node.set(wpan.WPAN_THREAD_ROUTER_UPGRADE_THRESHOLD, '100')
 verify(int(node.get(wpan.WPAN_THREAD_ROUTER_UPGRADE_THRESHOLD), 0) == 100)
@@ -141,12 +141,12 @@ all_gettable_props = [
     wpan.WPAN_OT_MSG_BUFFER_COUNTERS_AS_STRING,
     wpan.WPAN_NCP_COUNTER_ALL_MAC,
     wpan.WPAN_NCP_COUNTER_ALL_MAC_ASVALMAP,
-    wpan.WPAN_MAC_WHITELIST_ENABLED,
-    wpan.WPAN_MAC_WHITELIST_ENTRIES,
-    wpan.WPAN_MAC_WHITELIST_ENTRIES_ASVALMAP,
-    wpan.WPAN_MAC_BLACKLIST_ENABLED,
-    wpan.WPAN_MAC_BLACKLIST_ENTRIES,
-    wpan.WPAN_MAC_BLACKLIST_ENTRIES_ASVALMAP,
+    wpan.WPAN_MAC_ALLOWLIST_ENABLED,
+    wpan.WPAN_MAC_ALLOWLIST_ENTRIES,
+    wpan.WPAN_MAC_ALLOWLIST_ENTRIES_ASVALMAP,
+    wpan.WPAN_MAC_DENYLIST_ENABLED,
+    wpan.WPAN_MAC_DENYLIST_ENTRIES,
+    wpan.WPAN_MAC_DENYLIST_ENTRIES_ASVALMAP,
     wpan.WPAN_JAM_DETECTION_STATUS,
     wpan.WPAN_JAM_DETECTION_ENABLE,
     wpan.WPAN_JAM_DETECTION_RSSI_THRESHOLD,
@@ -171,17 +171,29 @@ all_gettable_props = [
     wpan.WPAN_THREAD_LEADER_WEIGHT,
     wpan.WPAN_THREAD_LEADER_LOCAL_WEIGHT,
     wpan.WPAN_THREAD_LEADER_NETWORK_DATA,
-    wpan.WPAN_THREAD_STABLE_LEADER_NETWORK_DATA
+    wpan.WPAN_THREAD_STABLE_LEADER_NETWORK_DATA,
 ]
 
+all_posix_gettable_props = [wpan.WPAN_RCP_VERSION]
+
+# note: Partition Id only takes effect after forming one Thread network.
+node.set(wpan.WPAN_PARTITION_ID, '12345678')
+
 node.form('get-set')
+
+# verify that Partition Id property is indeed changed.
+verify(int(node.get(wpan.WPAN_PARTITION_ID), 0) == 12345678)
 
 for prop in all_gettable_props:
     node.get(prop)
 
-#-----------------------------------------------------------------------------------------------------------------------
+if node.using_posix_with_rcp:
+    for prop in all_posix_gettable_props:
+        node.get(prop)
+
+# -----------------------------------------------------------------------------------------------------------------------
 # Test finished
 
 wpan.Node.finalize_all_nodes()
 
-print '\'{}\' passed.'.format(test_name)
+print('\'{}\' passed.'.format(test_name))

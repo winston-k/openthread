@@ -1,5 +1,5 @@
 #
-#  Copyright (c) 2017, The OpenThread Authors.
+#  Copyright (c) 2020, The OpenThread Authors.
 #  All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -25,16 +25,58 @@
 #  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 #  POSSIBILITY OF SUCH DAMAGE.
 #
+include $(abs_top_nlbuild_autotools_dir)/automake/pre.am
+include $(top_srcdir)/examples/platforms/efr32/efr32_platform_defs.am
 
-#
-# efr32 platform-specific Makefile
-#
+# ==============================================================================
+# Add mbedtls archive to LDADD_COMMON
+# ==============================================================================
+if OPENTHREAD_ENABLE_BUILTIN_MBEDTLS
+LDADD_COMMON                                                                 += \
+    $(top_builddir)/third_party/mbedtls/libmbedcrypto.a                         \
+    $(NULL)
+else
+LDADD_COMMON                                                                 += \
+    $(top_builddir)/third_party/silabs/libsilabs-mbedtls.a                      \
+    $(NULL)
+endif # OPENTHREAD_ENABLE_BUILTIN_MBEDTLS
 
-LDADD_COMMON                                                          += \
-    $(top_builddir)/examples/platforms/efr32/libopenthread-efr32.a       \
-    $(top_srcdir)/third_party/silabs/gecko_sdk_suite/v2.5/platform/radio/rail_lib/autogen/librail_release/librail_efr32xg12_gcc_release.a \
+# ==============================================================================
+# Linker flags
+# ==============================================================================
+RAIL_SUFFIX = $(shell echo $(PLATFORM_LOWERCASE)| tr mg xg)_gcc_release.a
+LIBRAIL = $(shell \
+if [ "$(DMP)" = "1" ]; then                     \
+    echo librail_multiprotocol_$(RAIL_SUFFIX);  \
+else                                            \
+    echo librail_$(RAIL_SUFFIX);                \
+fi; )
+
+LDADD_COMMON                                                                  += \
+    $(top_builddir)/examples/platforms/efr32/libopenthread-$(PLATFORM_LOWERCASE).a   \
+    $(top_builddir)/third_party/silabs/libsilabs-$(PLATFORM_LOWERCASE)-sdk.a         \
+    $(top_srcdir)/third_party/silabs/gecko_sdk_suite/v3.1/platform/radio/rail_lib/autogen/librail_release/$(LIBRAIL) \
     $(NULL)
 
-LDFLAGS_COMMON                                                        += \
-    -T $(top_srcdir)/third_party/silabs/gecko_sdk_suite/v2.5/platform/Device/SiliconLabs/EFR32MG12P/Source/GCC/efr32mg12p.ld \
+LDFLAGS_COMMON                                                                       += \
+    -T $(top_srcdir)/examples/platforms/efr32/$(PLATFORM_LOWERCASE)/$(PLATFORM_LOWERCASE).ld    \
     $(NULL)
+
+# ==============================================================================
+# Platform includes
+# ==============================================================================
+if OPENTHREAD_EXAMPLES_EFR32MG1
+include $(top_srcdir)/examples/platforms/efr32/efr32mg1/Makefile.platform.am
+endif
+
+if OPENTHREAD_EXAMPLES_EFR32MG12
+include $(top_srcdir)/examples/platforms/efr32/efr32mg12/Makefile.platform.am
+endif
+
+if OPENTHREAD_EXAMPLES_EFR32MG13
+include $(top_srcdir)/examples/platforms/efr32/efr32mg13/Makefile.platform.am
+endif
+
+if OPENTHREAD_EXAMPLES_EFR32MG21
+include $(top_srcdir)/examples/platforms/efr32/efr32mg21/Makefile.platform.am
+endif

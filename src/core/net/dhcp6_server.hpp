@@ -37,15 +37,21 @@
 #include "openthread-core-config.h"
 
 #include "common/locator.hpp"
+#include "common/non_copyable.hpp"
 #include "mac/mac.hpp"
-#include "mac/mac_frame.hpp"
+#include "mac/mac_types.hpp"
 #include "net/dhcp6.hpp"
 #include "net/udp6.hpp"
 #include "thread/network_data_leader.hpp"
 
 namespace ot {
-
 namespace Dhcp6 {
+
+#if OPENTHREAD_CONFIG_DHCP6_SERVER_ENABLE
+
+#if OPENTHREAD_ENABLE_DHCP6_MULTICAST_SOLICIT
+#error "OPENTHREAD_ENABLE_DHCP6_MULTICAST_SOLICIT requires DHCPv6 server on Border Router side to be enabled."
+#endif
 
 /**
  * @addtogroup core-dhcp6
@@ -57,45 +63,7 @@ namespace Dhcp6 {
  *
  */
 
-/**
- * DHCPv6 default constant
- *
- */
-#define OT_DHCP6_DEFAULT_IA_NA_T1 0xffffffffU
-#define OT_DHCP6_DEFAULT_IA_NA_T2 0xffffffffU
-#define OT_DHCP6_DEFAULT_PREFERRED_LIFETIME 0xffffffffU
-#define OT_DHCP6_DEFAULT_VALID_LIFETIME 0xffffffffU
-
-/**
- * This class implements prefix agent.
- *
- */
-
-OT_TOOL_PACKED_BEGIN
-class PrefixAgent
-{
-public:
-    /**
-     * This method returns the reference to the IPv6 prefix.
-     *
-     * @returns A reference to the IPv6 prefix.
-     *
-     */
-    otIp6Prefix *GetPrefix(void) { return &mIp6Prefix; }
-
-    /**
-     * This method sets the IPv6 prefix.
-     *
-     * @param[in]  aIp6Prefix The reference to the IPv6 prefix to set.
-     *
-     */
-    void SetPrefix(otIp6Prefix &aIp6Prefix) { memcpy(&mIp6Prefix, &aIp6Prefix, sizeof(otIp6Prefix)); }
-
-private:
-    otIp6Prefix mIp6Prefix; ///< prefix
-} OT_TOOL_PACKED_END;
-
-class Dhcp6Server : public InstanceLocator
+class Server : public InstanceLocator, private NonCopyable
 {
 public:
     /**
@@ -104,52 +72,164 @@ public:
      * @param[in]  aInstance     A reference to the OpenThread instance.
      *
      */
-    explicit Dhcp6Server(Instance &aInstance);
+    explicit Server(Instance &aInstance);
 
     /**
      * This method updates DHCP Agents and DHCP Alocs.
      *
      */
-    otError UpdateService();
+    otError UpdateService(void);
+
+    /**
+     * This method applies the Mesh Local Prefix.
+     *
+     */
+    void ApplyMeshLocalPrefix(void);
 
 private:
+    class PrefixAgent
+    {
+    public:
+        /**
+         * This method indicates whether or not @p aAddress has a matching prefix.
+         *
+         * @param[in]  aAddress  The IPv6 address to compare.
+         *
+         * @retval TRUE if the address has a matching prefix.
+         * @retval FALSE if the address does not have a matching prefix.
+         *
+         */
+        bool IsPrefixMatch(const Ip6::Address &aAddress) const { return aAddress.MatchesPrefix(GetPrefix()); }
+
+        /**
+         * This method indicates whether or not this entry is valid.
+         *
+         * @retval TRUE if this entry is valid.
+         * @retval FALSE if this entry is not valid.
+         *
+         */
+        bool IsValid(void) const { return mAloc.mValid; }
+
+        /**
+         * This method sets the entry to invalid.
+         *
+         */
+        void Clear(void) { mAloc.mValid = false; }
+
+        /**
+         * This method returns the 6LoWPAN context ID.
+         *
+         * @returns The 6LoWPAN context ID.
+         *
+         */
+        uint8_t GetContextId(void) const { return mAloc.mAddress.mFields.m8[15]; }
+
+        /**
+         * This method returns the ALOC.
+         *
+         * @returns the ALOC.
+         *
+         */
+        Ip6::NetifUnicastAddress &GetAloc(void) { return mAloc; }
+
+        /**
+         * This method returns the IPv6 prefix.
+         *
+         * @returns The IPv6 prefix.
+         *
+         */
+        const Ip6::Prefix &GetPrefix(void) const { return mPrefix; }
+
+        /**
+         * This method returns the IPv6 prefix.
+         *
+         * @returns The IPv6 prefix.
+         *
+         */
+        Ip6::Prefix &GetPrefix(void) { return mPrefix; }
+
+        /**
+         * This method returns the IPv6 prefix as an IPv6 address.
+         *
+         * @returns The IPv6 prefix as an IPv6 address.
+         *
+         */
+        const Ip6::Address &GetPrefixAsAddress(void) const
+        {
+            return static_cast<const Ip6::Address &>(mPrefix.mPrefix);
+        }
+
+        /**
+         * This method sets the ALOC.
+         *
+         * @param[in]  aPrefix           The IPv6 prefix.
+         * @param[in]  aMeshLocalPrefix  The Mesh Local Prefix.
+         * @param[in]  aContextId        The 6LoWPAN Context ID.
+         *
+         */
+        void Set(const Ip6::Prefix &aPrefix, const Mle::MeshLocalPrefix &aMeshLocalPrefix, uint8_t aContextId)
+        {
+            mPrefix = aPrefix;
+
+            mAloc.InitAsThreadOrigin();
+            mAloc.GetAddress().SetToAnycastLocator(aMeshLocalPrefix, (Ip6::Address::kAloc16Mask << 8) + aContextId);
+        }
+
+    private:
+        Ip6::NetifUnicastAddress mAloc;
+        Ip6::Prefix              mPrefix;
+    };
+
+    enum : uint16_t
+    {
+        kNumPrefixes = OPENTHREAD_CONFIG_DHCP6_SERVER_NUM_PREFIXES,
+    };
+
     void Start(void);
     void Stop(void);
 
-    otError AddPrefixAgent(otIp6Prefix &aIp6Prefix);
-    otError RemovePrefixAgent(const uint8_t *aIp6Address);
+    void AddPrefixAgent(const Ip6::Prefix &aIp6Prefix, const Lowpan::Context &aContext);
 
-    otError AppendHeader(Message &aMessage, uint8_t *aTransactionId);
-    otError AppendClientIdentifier(Message &aMessage, ClientIdentifier &aClient);
+    otError AppendHeader(Message &aMessage, const TransactionId &aTransactionId);
+    otError AppendClientIdentifier(Message &aMessage, ClientIdentifier &aClientId);
     otError AppendServerIdentifier(Message &aMessage);
     otError AppendIaNa(Message &aMessage, IaNa &aIaNa);
     otError AppendStatusCode(Message &aMessage, Status aStatusCode);
-    otError AppendIaAddress(Message &aMessage, ClientIdentifier &aClient);
+    otError AppendIaAddress(Message &aMessage, ClientIdentifier &aClientId);
     otError AppendRapidCommit(Message &aMessage);
     otError AppendVendorSpecificInformation(Message &aMessage);
 
-    otError AddIaAddress(Message &aMessage, otIp6Prefix &aIp6Prefix, ClientIdentifier &aClient);
+    otError AddIaAddress(Message &aMessage, const Ip6::Address &aPrefix, ClientIdentifier &aClientId);
 
     static void HandleUdpReceive(void *aContext, otMessage *aMessage, const otMessageInfo *aMessageInfo);
     void        HandleUdpReceive(Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
 
-    void ProcessSolicit(Message &aMessage, otIp6Address &aDst, uint8_t *aTransactionId);
+    void ProcessSolicit(Message &aMessage, const Ip6::Address &aDst, const TransactionId &aTransactionId);
 
     uint16_t FindOption(Message &aMessage, uint16_t aOffset, uint16_t aLength, Code aCode);
-    otError  ProcessClientIdentifier(Message &aMessage, uint16_t aOffset, ClientIdentifier &aClient);
+    otError  ProcessClientIdentifier(Message &aMessage, uint16_t aOffset, ClientIdentifier &aClientId);
     otError  ProcessIaNa(Message &aMessage, uint16_t aOffset, IaNa &aIaNa);
     otError  ProcessIaAddress(Message &aMessage, uint16_t aOffset);
     otError  ProcessElapsedTime(Message &aMessage, uint16_t aOffset);
 
-    otError SendReply(otIp6Address &aDst, uint8_t *aTransactionId, ClientIdentifier &aClientIdentifier, IaNa &aIaNa);
+    otError SendReply(const Ip6::Address & aDst,
+                      const TransactionId &aTransactionId,
+                      ClientIdentifier &   aClientId,
+                      IaNa &               aIaNa);
 
-    Ip6::UdpSocket mSocket;
+    Ip6::Udp::Socket mSocket;
 
-    Ip6::NetifUnicastAddress mAgentsAloc[OPENTHREAD_CONFIG_NUM_DHCP_PREFIXES];
-    PrefixAgent              mPrefixAgents[OPENTHREAD_CONFIG_NUM_DHCP_PREFIXES];
-    uint8_t                  mPrefixAgentsMask;
-    uint8_t                  mPrefixAgentsCount;
+    PrefixAgent mPrefixAgents[kNumPrefixes];
+    uint8_t     mPrefixAgentsCount;
+    uint8_t     mPrefixAgentsMask;
 };
+
+/**
+ * @}
+ *
+ */
+
+#endif // OPENTHREAD_CONFIG_DHCP6_SERVER_ENABLE
 
 } // namespace Dhcp6
 } // namespace ot

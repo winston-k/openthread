@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2019, The OpenThread Authors.
 #  All rights reserved.
@@ -27,11 +27,9 @@
 #  POSSIBILITY OF SUCH DAMAGE.
 #
 
-from binascii import hexlify
 from enum import IntEnum
 from functools import reduce
 import io
-import math
 import struct
 
 from ipv6 import BuildableFromBytes
@@ -94,8 +92,7 @@ class AlertDescription(IntEnum):
 
 class Record(ConvertibleToBytes, BuildableFromBytes):
 
-    def __init__(self, content_type, version, epoch,
-                 sequence_number, length, fragment):
+    def __init__(self, content_type, version, epoch, sequence_number, length, fragment):
         self.content_type = content_type
         self.version = version
         self.epoch = epoch
@@ -104,12 +101,8 @@ class Record(ConvertibleToBytes, BuildableFromBytes):
         self.fragment = fragment
 
     def to_bytes(self):
-        return (struct.pack(">B", self.content_type) +
-                self.version.to_bytes() +
-                struct.pack(">H", self.epoch) +
-                self.sequence_number.to_bytes(6, byteorder='big') +
-                struct.pack(">H", self.length) +
-                self.fragment)
+        return (struct.pack(">B", self.content_type) + self.version.to_bytes() + struct.pack(">H", self.epoch) +
+                self.sequence_number.to_bytes(6, byteorder='big') + struct.pack(">H", self.length) + self.fragment)
 
     @classmethod
     def from_bytes(cls, data):
@@ -123,7 +116,12 @@ class Record(ConvertibleToBytes, BuildableFromBytes):
 
     def __repr__(self):
         return "Record(content_type={}, version={}, epoch={}, sequence_number={}, length={})".format(
-            str(self.content_type), self.version, self.epoch, self.sequence_number, self.length)
+            str(self.content_type),
+            self.version,
+            self.epoch,
+            self.sequence_number,
+            self.length,
+        )
 
 
 class Message(ConvertibleToBytes, BuildableFromBytes):
@@ -141,8 +139,15 @@ class Message(ConvertibleToBytes, BuildableFromBytes):
 
 class HandshakeMessage(Message):
 
-    def __init__(self, handshake_type, length, message_seq,
-                 fragment_offset, fragment_length, body):
+    def __init__(
+        self,
+        handshake_type,
+        length,
+        message_seq,
+        fragment_offset,
+        fragment_length,
+        body,
+    ):
         super(HandshakeMessage, self).__init__(ContentType.HANDSHAKE)
         self.handshake_type = handshake_type
         self.length = length
@@ -152,12 +157,9 @@ class HandshakeMessage(Message):
         self.body = body
 
     def to_bytes(self):
-        return (struct.pack(">B", self.handshake_type) +
-                struct.pack(">I", self.length)[1:] +
-                struct.pack(">H", self.message_seq) +
-                struct.pack(">I", self.fragment_offset)[1:] +
-                struct.pack(">I", self.fragment_length)[1:] +
-                self.body.to_bytes())
+        return (struct.pack(">B", self.handshake_type) + struct.pack(">I", self.length)[1:] +
+                struct.pack(">H", self.message_seq) + struct.pack(">I", self.fragment_offset)[1:] +
+                struct.pack(">I", self.fragment_length)[1:] + self.body.to_bytes())
 
     @classmethod
     def from_bytes(cls, data):
@@ -177,8 +179,14 @@ class HandshakeMessage(Message):
             body = bytes(data.read(fragment_length))
         assert data.tell() == end_position
 
-        return cls(handshake_type, length, message_seq,
-                   fragment_offset, fragment_length, body)
+        return cls(
+            handshake_type,
+            length,
+            message_seq,
+            fragment_offset,
+            fragment_length,
+            body,
+        )
 
     def __repr__(self):
         return "Handshake(type={}, length={})".format(str(self.handshake_type), self.length)
@@ -191,9 +199,7 @@ class ProtocolVersion(ConvertibleToBytes, BuildableFromBytes):
         self.minor = minor
 
     def __eq__(self, other):
-        return (type(self) == type(other) and
-                self.major == other.major and
-                self.minor == other.minor)
+        return (isinstance(self, type(other)) and self.major == other.major and self.minor == other.minor)
 
     def to_bytes(self):
         return struct.pack(">BB", self.major, self.minor)
@@ -217,8 +223,7 @@ class Random(ConvertibleToBytes, BuildableFromBytes):
         assert len(self.random_bytes) == Random.random_bytes_length
 
     def __eq__(self, other):
-        return (type(self) == type(other) and
-                self.gmt_unix_time == other.gmt_unix_time and
+        return (isinstance(self, type(other)) and self.gmt_unix_time == other.gmt_unix_time and
                 self.random_bytes == other.random_bytes)
 
     def to_bytes(self):
@@ -243,9 +248,7 @@ class VariableVector(ConvertibleToBytes):
         return len(self.elements)
 
     def __eq__(self, other):
-        return (type(self) == type(other) and
-                self.subrange == other.subrange and
-                self.ele_cls == other.ele_cls and
+        return (isinstance(self, type(other)) and self.subrange == other.subrange and self.ele_cls == other.ele_cls and
                 self.elements == other.elements)
 
     def to_bytes(self):
@@ -264,7 +267,11 @@ class VariableVector(ConvertibleToBytes):
     @classmethod
     def _decode_length(cls, subrange, data):
         length_in_byte = cls._calc_length_in_byte(subrange[1])
-        return reduce(lambda acc, byte: (acc << 8) | byte, bytearray(data.read(length_in_byte)), 0)
+        return reduce(
+            lambda acc, byte: (acc << 8) | byte,
+            bytearray(data.read(length_in_byte)),
+            0,
+        )
 
     @classmethod
     def _encode_length(cls, length, subrange):
@@ -272,7 +279,7 @@ class VariableVector(ConvertibleToBytes):
         ret = bytearray([])
         while length_in_byte > 0:
             ret += bytes(length_in_byte & 0xff)
-            length_in_byte == length_in_byte >> 8
+            length_in_byte = length_in_byte >> 8
         return ret
 
     @classmethod
@@ -286,7 +293,7 @@ class Opaque(ConvertibleToBytes, BuildableFromBytes):
         self.byte = byte
 
     def __eq__(self, other):
-        return type(self) == type(other) and self.byte == other.byte
+        return isinstance(self, type(other)) and self.byte == other.byte
 
     def to_bytes(self):
         return struct.pack(">B", self.byte)
@@ -302,7 +309,7 @@ class CipherSuite(ConvertibleToBytes, BuildableFromBytes):
         self.cipher = cipher
 
     def __eq__(self, other):
-        return type(self) == type(other) and self.cipher == other.cipher
+        return isinstance(self, type(other)) and self.cipher == other.cipher
 
     def to_bytes(self):
         return struct.pack(">BB", self.cipher[0], self.cipher[1])
@@ -323,7 +330,7 @@ class CompressionMethod(ConvertibleToBytes, BuildableFromBytes):
         pass
 
     def __eq__(self, other):
-        return type(self) == type(other)
+        return isinstance(self, type(other))
 
     def to_bytes(self):
         return struct.pack(">B", CompressionMethod.NULL)
@@ -342,13 +349,11 @@ class Extension(ConvertibleToBytes, BuildableFromBytes):
         self.extension_data = extension_data
 
     def __eq__(self, other):
-        return (type(self) == type(other) and
-                self.extension_type == other.extension_type and
+        return (isinstance(self, type(other)) and self.extension_type == other.extension_type and
                 self.extension_data == other.extension_data)
 
     def to_bytes(self):
-        return (struct.pack(">H", self.extension_type) +
-                self.extension_data.to_bytes())
+        return (struct.pack(">H", self.extension_type) + self.extension_data.to_bytes())
 
     @classmethod
     def from_bytes(cls, data):
@@ -359,8 +364,16 @@ class Extension(ConvertibleToBytes, BuildableFromBytes):
 
 class ClientHello(HandshakeMessage):
 
-    def __init__(self, client_version, random, session_id,
-                 cookie, cipher_suites, compression_methods, extensions):
+    def __init__(
+        self,
+        client_version,
+        random,
+        session_id,
+        cookie,
+        cipher_suites,
+        compression_methods,
+        extensions,
+    ):
         self.client_version = client_version
         self.random = random
         self.session_id = session_id
@@ -370,12 +383,8 @@ class ClientHello(HandshakeMessage):
         self.extensions = extensions
 
     def to_bytes(self):
-        return (self.client_version.to_bytes() +
-                self.random.to_bytes() +
-                self.session_id.to_bytes() +
-                self.cookie.to_bytes() +
-                self.cipher_suites.to_bytes() +
-                self.compression_methods.to_bytes() +
+        return (self.client_version.to_bytes() + self.random.to_bytes() + self.session_id.to_bytes() +
+                self.cookie.to_bytes() + self.cipher_suites.to_bytes() + self.compression_methods.to_bytes() +
                 self.extensions.to_bytes())
 
     @classmethod
@@ -389,8 +398,15 @@ class ClientHello(HandshakeMessage):
         extensions = None
         if data.tell() < len(data.getvalue()):
             extensions = VariableVector.from_bytes(Extension, (0, 2**16 - 1), data)
-        return cls(client_version, random, session_id,
-                   cookie, cipher_suites, compression_methods, extensions)
+        return cls(
+            client_version,
+            random,
+            session_id,
+            cookie,
+            cipher_suites,
+            compression_methods,
+            extensions,
+        )
 
 
 class HelloVerifyRequest(HandshakeMessage):
@@ -411,8 +427,15 @@ class HelloVerifyRequest(HandshakeMessage):
 
 class ServerHello(HandshakeMessage):
 
-    def __init__(self, server_version, random, session_id,
-                 cipher_suite, compression_method, extensions):
+    def __init__(
+        self,
+        server_version,
+        random,
+        session_id,
+        cipher_suite,
+        compression_method,
+        extensions,
+    ):
         self.server_version = server_version
         self.random = random
         self.session_id = session_id
@@ -421,12 +444,8 @@ class ServerHello(HandshakeMessage):
         self.extensions = extensions
 
     def to_bytes(self):
-        return (self.server_version.to_bytes() +
-                self.random.to_bytes() +
-                self.session_id.to_bytes() +
-                self.cipher_suite.to_bytes() +
-                self.compression_method.to_bytes() +
-                self.extensions.to_bytes())
+        return (self.server_version.to_bytes() + self.random.to_bytes() + self.session_id.to_bytes() +
+                self.cipher_suite.to_bytes() + self.compression_method.to_bytes() + self.extensions.to_bytes())
 
     @classmethod
     def from_bytes(cls, data):
@@ -438,8 +457,14 @@ class ServerHello(HandshakeMessage):
         extensions = None
         if data.tell() < len(data.getvalue()):
             extensions = VariableVector.from_bytes(Extension, (0, 2**16 - 1), data)
-        return cls(server_version, random, session_id,
-                   cipher_suite, compression_method, extensions)
+        return cls(
+            server_version,
+            random,
+            session_id,
+            cipher_suite,
+            compression_method,
+            extensions,
+        )
 
 
 class ServerHelloDone(HandshakeMessage):
@@ -512,14 +537,13 @@ class AlertMessage(Message):
         level, description = struct.unpack(">BB", data.read(2))
         try:
             return cls(AlertLevel(level), AlertDescription(description))
-        except:
+        except BaseException:
             data.read()
             # An AlertMessage could be encrypted and we can't parsing it.
             return cls(None, None)
 
     def __repr__(self):
-        return "Alert(level={}, description={})".format(
-            str(self.level), str(self.description))
+        return "Alert(level={}, description={})".format(str(self.level), str(self.description))
 
 
 class ChangeCipherSpecMessage(Message):
@@ -568,21 +592,20 @@ handshake_map = {
     HandshakeType.CLIENT_HELLO: ClientHello,
     HandshakeType.SERVER_HELLO: ServerHello,
     HandshakeType.HELLO_VERIFY_REQUEST: HelloVerifyRequest,
-    HandshakeType.CERTIFICATE: None,    # Certificate
-    HandshakeType.SERVER_KEY_EXCHANGE: None,    # ServerKeyExchange
-    HandshakeType.CERTIFICATE_REQUEST: None,    # CertificateRequest
+    HandshakeType.CERTIFICATE: None,  # Certificate
+    HandshakeType.SERVER_KEY_EXCHANGE: None,  # ServerKeyExchange
+    HandshakeType.CERTIFICATE_REQUEST: None,  # CertificateRequest
     HandshakeType.SERVER_HELLO_DONE: ServerHelloDone,
-    HandshakeType.CERTIFICATE_VERIFY: None, # CertificateVerify
-    HandshakeType.CLIENT_KEY_EXCHANGE: None,    # ClientKeyExchange
-    HandshakeType.FINISHED: None,   # Finished
+    HandshakeType.CERTIFICATE_VERIFY: None,  # CertificateVerify
+    HandshakeType.CLIENT_KEY_EXCHANGE: None,  # ClientKeyExchange
+    HandshakeType.FINISHED: None,  # Finished
 }
-
 
 content_map = {
     ContentType.CHANGE_CIPHER_SPEC: ChangeCipherSpecMessage,
     ContentType.ALERT: AlertMessage,
     ContentType.HANDSHAKE: HandshakeMessage,
-    ContentType.APPLICATION_DATA: ApplicationDataMessage
+    ContentType.APPLICATION_DATA: ApplicationDataMessage,
 }
 
 
@@ -600,7 +623,7 @@ class MessageFactory(object):
         while data.tell() < len(data.getvalue()):
             record = Record.from_bytes(data)
 
-            if record.version.major != 0xfe or record.version.minor != 0xfd:
+            if record.version.major != 0xfe or record.version.minor != 0xFD:
                 raise ValueError("DTLS version error, expect DTLSv1.2")
 
             last_msg_is_change_cipher_spec = type(self).last_msg_is_change_cipher_spec

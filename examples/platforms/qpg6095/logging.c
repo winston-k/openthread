@@ -26,6 +26,8 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "openthread-core-config.h"
+
 #include "platform_qorvo.h"
 
 #include <ctype.h>
@@ -36,8 +38,6 @@
 
 #include "uart_qorvo.h"
 #include "utils/code_utils.h"
-
-// Macro to append content to end of the log string.
 
 #if (OPENTHREAD_CONFIG_LOG_OUTPUT == OPENTHREAD_CONFIG_LOG_OUTPUT_PLATFORM_DEFINED)
 void otPlatLog(otLogLevel aLogLevel, otLogRegion aLogRegion, const char *aFormat, ...)

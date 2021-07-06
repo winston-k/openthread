@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2018, The OpenThread Authors.
 #  All rights reserved.
@@ -30,7 +30,7 @@ import time
 import wpan
 from wpan import verify
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test description: Partition formation and merge
 #
 # Network Topology:
@@ -49,16 +49,27 @@ from wpan import verify
 #   merge the info in combined.
 #
 
-
 test_name = __file__[:-3] if __file__.endswith('.py') else __file__
-print '-' * 120
-print 'Starting \'{}\''.format(test_name)
+print('-' * 120)
+print('Starting \'{}\''.format(test_name))
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Utility functions
 
-def verify_prefix(node_list, prefix, prefix_len=64, stable=True, priority='med', on_mesh=False, slaac=False, dhcp=False,
-        configure=False, default_route=False, preferred=False):
+
+def verify_prefix(
+    node_list,
+    prefix,
+    prefix_len=64,
+    stable=True,
+    priority='med',
+    on_mesh=False,
+    slaac=False,
+    dhcp=False,
+    configure=False,
+    default_route=False,
+    preferred=False,
+):
     """
     This function verifies that the `prefix` is present on all the nodes in the `node_list`.
     """
@@ -79,7 +90,8 @@ def verify_prefix(node_list, prefix, prefix_len=64, stable=True, priority='med',
         else:
             raise wpan.VerifyError("Did not find prefix {} on node {}".format(prefix, node))
 
-#-----------------------------------------------------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------------------------------------------------
 # Creating `wpan.Nodes` instances
 
 speedup = 25
@@ -90,34 +102,34 @@ r2 = wpan.Node()
 c1 = wpan.Node()
 c2 = wpan.Node()
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Init all nodes
 
 wpan.Node.init_all_nodes()
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Build network topology
 #
 
 r1.form("partition")
 
-r1.whitelist_node(r2)
-r2.whitelist_node(r1)
+r1.allowlist_node(r2)
+r2.allowlist_node(r1)
 r2.join_node(r1, wpan.JOIN_TYPE_ROUTER)
 
-c1.whitelist_node(r1)
-r1.whitelist_node(c1)
+c1.allowlist_node(r1)
+r1.allowlist_node(c1)
 c1.join_node(r1, wpan.JOIN_TYPE_END_DEVICE)
 
-c2.whitelist_node(r2)
-r2.whitelist_node(c2)
+c2.allowlist_node(r2)
+r2.allowlist_node(c2)
 c2.join_node(r2, wpan.JOIN_TYPE_END_DEVICE)
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test implementation
 
 short_wait = 6
-long_wait  = 15   # With speedup of 25, this emulates 375s (~6 min).
+long_wait = 15  # With speedup of 25, this emulates 375s (~6 min).
 
 prefix1 = "fd00:1234::"
 prefix2 = "fd00:abcd::"
@@ -128,45 +140,56 @@ verify(r1.get(wpan.WPAN_NODE_TYPE) == wpan.NODE_TYPE_LEADER)
 verify(r2.get(wpan.WPAN_NODE_TYPE) == wpan.NODE_TYPE_ROUTER)
 
 # Now force the two routers to form their own partition
-# by removing them from each other's whitelist table
-r1.un_whitelist_node(r2)
-r2.un_whitelist_node(r1)
+# by removing them from each other's allowlist table
+r1.un_allowlist_node(r2)
+r2.un_allowlist_node(r1)
 
-# Add a prefix before r2 releaizes it can not longer talk
+# Add a prefix before r2 realizes it can not longer talk
 # to leader (r1).
 r2.add_prefix(prefix2)
 
 # Check that r2 forms its own partition
+
+
 def check_r2_become_leader():
     verify(r2.get(wpan.WPAN_NODE_TYPE) == wpan.NODE_TYPE_LEADER)
+
 
 wpan.verify_within(check_r2_become_leader, long_wait)
 
 # While we have two partition, add a prefix on r1
 r1.add_prefix(prefix1)
 
-# Update white list and wait for partitions to merge.
-r1.whitelist_node(r2)
-r2.whitelist_node(r1)
+# Update allowlist and wait for partitions to merge.
+r1.allowlist_node(r2)
+r2.allowlist_node(r1)
 
-def check_paritition_id_macth():
+
+def check_partition_id_match():
     verify(r1.get(wpan.WPAN_PARTITION_ID) == r2.get(wpan.WPAN_PARTITION_ID))
 
-wpan.verify_within(check_paritition_id_macth, long_wait)
+
+wpan.verify_within(check_partition_id_match, long_wait)
 
 # Check that partitions merged successfully
+
+
 def check_r1_r2_roles():
     r1_type = r1.get(wpan.WPAN_NODE_TYPE)
     r2_type = r2.get(wpan.WPAN_NODE_TYPE)
     verify((r1_type == wpan.NODE_TYPE_LEADER and r2_type == wpan.NODE_TYPE_ROUTER) or
-        (r2_type == wpan.NODE_TYPE_LEADER and r1_type == wpan.NODE_TYPE_ROUTER))
+           (r2_type == wpan.NODE_TYPE_LEADER and r1_type == wpan.NODE_TYPE_ROUTER))
+
 
 wpan.verify_within(check_r1_r2_roles, short_wait)
 
 # Verify all nodes have both prefixes
+
+
 def check_prefixes():
     verify_prefix([r1, r2, c1, c2], prefix1)
     verify_prefix([r1, r2, c1, c2], prefix2)
+
 
 wpan.verify_within(check_prefixes, short_wait)
 
@@ -174,9 +197,9 @@ wpan.verify_within(check_prefixes, short_wait)
 verify(len(wpan.parse_list(r1.get(wpan.WPAN_THREAD_CHILD_TABLE))) == 1)
 verify(len(wpan.parse_list(r2.get(wpan.WPAN_THREAD_CHILD_TABLE))) == 1)
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test finished
 
 wpan.Node.finalize_all_nodes()
 
-print '\'{}\' passed.'.format(test_name)
+print('\'{}\' passed.'.format(test_name))

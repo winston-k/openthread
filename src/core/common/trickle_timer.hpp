@@ -86,7 +86,6 @@ public:
      * @param[in]  aRedundancyConstant      The redundancy constant for the timer, also known as `k`.
      * @param[in]  aTransmitHandler         A pointer to a function that is called when transmission should occur.
      * @param[in]  aIntervalExpiredHandler  An optional pointer to a function that is called when the interval expires.
-     * @param[in]  aOwner                   A pointer to owner of the `TrickleTimer` object.
      *
      */
     TrickleTimer(Instance &aInstance,
@@ -94,8 +93,7 @@ public:
                  uint32_t aRedundancyConstant,
 #endif
                  Handler aTransmitHandler,
-                 Handler aIntervalExpiredHandler,
-                 void *  aOwner);
+                 Handler aIntervalExpiredHandler);
 
     /**
      * This method indicates whether or not the trickle timer instance is running.
@@ -113,11 +111,8 @@ public:
      * @param[in]  aIntervalMax  The maximum interval for the timer in milliseconds.
      * @param[in]  aMode         The operating mode for the timer.
      *
-     * @retval OT_ERROR_NONE           The timer started successfully.
-     * @retval OT_ERROR_INVALID_ARGS   The given parameters are invalid (i.e., max interval is smaller than min).
-     *
      */
-    otError Start(uint32_t aIntervalMin, uint32_t aIntervalMax, Mode aMode);
+    void Start(uint32_t aIntervalMin, uint32_t aIntervalMax, Mode aMode);
 
     /**
      * This method stops the trickle timer.

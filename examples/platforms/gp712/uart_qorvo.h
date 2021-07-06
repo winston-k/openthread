@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2017, The OpenThread Authors.
+ *  Copyright (c) 2019, The OpenThread Authors.
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -36,18 +36,7 @@
 #define UART_QORVO_H_
 
 #include <stdint.h>
-
-/**
- * This function initializes the UART driver.
- *
- */
-void qorvoUartInit(void);
-
-/**
- * This function performs UART driver processing.
- *
- */
-void qorvoUartProcess(void);
+#include <openthread/platform/logging.h>
 
 /**
  * This function enables the UART driver.
@@ -74,7 +63,7 @@ void cbQorvoUartTxDone(void);
  * @param[in]  aBufLength   The number of bytes received from the uart.
  *
  */
-void qorvoUartSendInput(uint8_t* aBuf, uint16_t aBufLength);
+void qorvoUartSendInput(uint8_t *aBuf, uint16_t aBufLength);
 
 /**
  * Function which transmits data via the uart.
@@ -85,4 +74,15 @@ void qorvoUartSendInput(uint8_t* aBuf, uint16_t aBufLength);
  */
 void qorvoUartSendOutput(const uint8_t *aBuf, uint16_t aBufLength);
 
-#endif  // UART_QORVO_H_
+/**
+ * Function which transmits logging via the qorvo platform.
+ *
+ * @param[in]   aLogLevel   The severity level of logging.
+ * @param[in]   aLogRegion  The code region where the logging originated from.
+ * @param[in]   aFormat     The format strings.
+ * @param[in]   varargs     The arguments for the format string.
+ *
+ */
+void qorvoUartLog(otLogLevel aLogLevel, otLogRegion aLogRegion, const char *aFormat, ...);
+
+#endif // UART_QORVO_H_

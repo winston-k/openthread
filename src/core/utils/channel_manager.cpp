@@ -34,15 +34,15 @@
 
 #include "channel_manager.hpp"
 
-#include <openthread/platform/random.h>
-
 #include "common/code_utils.hpp"
 #include "common/instance.hpp"
+#include "common/locator-getters.hpp"
 #include "common/logging.hpp"
-#include "common/owner-locator.hpp"
 #include "common/random.hpp"
+#include "meshcop/dataset_updater.hpp"
+#include "radio/radio.hpp"
 
-#if OPENTHREAD_ENABLE_CHANNEL_MANAGER && OPENTHREAD_FTD
+#if OPENTHREAD_CONFIG_CHANNEL_MANAGER_ENABLE && OPENTHREAD_FTD
 
 namespace ot {
 namespace Utils {
@@ -51,12 +51,10 @@ ChannelManager::ChannelManager(Instance &aInstance)
     : InstanceLocator(aInstance)
     , mSupportedChannelMask(0)
     , mFavoredChannelMask(0)
-    , mActiveTimestamp(0)
-    , mNotifierCallback(aInstance, &ChannelManager::HandleStateChanged, this)
     , mDelay(kMinimumDelay)
     , mChannel(0)
     , mState(kStateIdle)
-    , mTimer(aInstance, &ChannelManager::HandleTimer, this)
+    , mTimer(aInstance, ChannelManager::HandleTimer)
     , mAutoSelectInterval(kDefaultAutoSelectInterval)
     , mAutoSelectEnabled(false)
 {
@@ -66,19 +64,23 @@ void ChannelManager::RequestChannelChange(uint8_t aChannel)
 {
     otLogInfoUtil("ChannelManager: Request to change to channel %d with delay %d sec", aChannel, mDelay);
 
-    if (aChannel == GetInstance().Get<Mac::Mac>().GetPanChannel())
+    if (aChannel == Get<Mac::Mac>().GetPanChannel())
     {
         otLogInfoUtil("ChannelManager: Already operating on the requested channel %d", aChannel);
         ExitNow();
     }
 
-    mState           = kStateChangeRequested;
-    mChannel         = aChannel;
-    mActiveTimestamp = 0;
+    if (mState == kStateChangeInProgress)
+    {
+        VerifyOrExit(mChannel != aChannel);
+    }
 
-    mTimer.Start(1 + Random::GetUint32InRange(0, kRequestStartJitterInterval));
+    mState   = kStateChangeRequested;
+    mChannel = aChannel;
 
-    GetNotifier().Signal(OT_CHANGED_CHANNEL_MANAGER_NEW_CHANNEL);
+    mTimer.Start(1 + Random::NonCrypto::GetUint32InRange(0, kRequestStartJitterInterval));
+
+    Get<Notifier>().Signal(kEventChannelManagerNewChannelChanged);
 
 exit:
     return;
@@ -95,141 +97,62 @@ exit:
     return error;
 }
 
-void ChannelManager::PreparePendingDataset(void)
+void ChannelManager::StartDatasetUpdate(void)
 {
-    ThreadNetif &        netif                  = GetInstance().GetThreadNetif();
-    uint64_t             pendingTimestamp       = 0;
-    uint64_t             pendingActiveTimestamp = 0;
-    uint32_t             delayInMs              = TimerMilli::SecToMsec(static_cast<uint32_t>(mDelay));
-    otOperationalDataset dataset;
-    otError              error;
+    MeshCoP::Dataset::Info dataset;
 
-    VerifyOrExit(mState == kStateChangeRequested);
+    dataset.Clear();
+    dataset.SetChannel(mChannel);
+    dataset.SetDelay(Time::SecToMsec(mDelay));
 
-    VerifyOrExit(mChannel != GetInstance().Get<Mac::Mac>().GetPanChannel());
-
-    if (netif.GetPendingDataset().Get(dataset) == OT_ERROR_NONE)
+    switch (Get<MeshCoP::DatasetUpdater>().RequestUpdate(dataset, HandleDatasetUpdateDone, this))
     {
-        if (dataset.mComponents.mIsPendingTimestampPresent)
-        {
-            pendingTimestamp = dataset.mPendingTimestamp;
-        }
+    case OT_ERROR_NONE:
+        mState = kStateChangeInProgress;
+        // Wait for the `HandleDatasetUpdateDone()` callback.
+        break;
 
-        // We check whether the Pending Dataset is changing the
-        // channel to same one as the current request (i.e., channel
-        // should match and delay should be less than the requested
-        // delay).
-
-        if (dataset.mComponents.mIsChannelPresent && (mChannel == dataset.mChannel) &&
-            dataset.mComponents.mIsDelayPresent && (dataset.mDelay <= delayInMs) &&
-            dataset.mComponents.mIsActiveTimestampPresent)
-        {
-            // We save the active timestamp to later check and ensure it
-            // is ahead of current ActiveDataset timestamp.
-
-            pendingActiveTimestamp = dataset.mActiveTimestamp;
-        }
-    }
-
-    pendingTimestamp += 1 + Random::GetUint32InRange(0, kMaxTimestampIncrease);
-
-    error = netif.GetActiveDataset().Get(dataset);
-
-    if (error != OT_ERROR_NONE)
-    {
-        // If there is no valid Active Dataset but we are not disabled, set
-        // the timer to try again after the retry interval. This handles the
-        // situation where a channel change request comes right after the
-        // network is formed but before the active dataset is created.
-
-        if (GetInstance().Get<Mle::Mle>().GetRole() != OT_DEVICE_ROLE_DISABLED)
-        {
-            mTimer.Start(kPendingDatasetTxRetryInterval);
-        }
-        else
-        {
-            otLogInfoUtil("ChannelManager: Request to change to channel %d failed. Device is disabled", mChannel);
-
-            mState = kStateIdle;
-            StartAutoSelectTimer();
-        }
-
-        ExitNow();
-    }
-
-    // `pendingActiveTimestamp` will be non-zero if the Pending
-    // Dataset is valid and is performing the same channel change.
-    // We check to ensure its timestamp is indeed ahead of current
-    // Active Dataset's timestamp, and if so, we skip updating
-    // the Pending Dataset.
-
-    if (pendingActiveTimestamp != 0)
-    {
-        if (dataset.mActiveTimestamp < pendingActiveTimestamp)
-        {
-            otLogInfoUtil("ChannelManager: Pending Dataset is valid for change channel to %d", mChannel);
-            mState = kStateSentMgmtPendingDataset;
-            mTimer.Start(delayInMs + kChangeCheckWaitInterval);
-            ExitNow();
-        }
-    }
-
-    // A non-zero `mActiveTimestamp` indicates that this is not the first
-    // attempt to update the Dataset for the ongoing requested channel
-    // change. In that case, if the Timestamp in current Active Dataset is
-    // more recent compared to `mActiveTimestamp`, the channel change
-    // process is canceled. This helps address situations where two
-    // different devices may be performing channel change around the same
-    // time.
-
-    if (mActiveTimestamp != 0)
-    {
-        if (dataset.mActiveTimestamp >= mActiveTimestamp)
-        {
-            otLogInfoUtil("ChannelManager: Canceling channel change to %d since current ActiveDataset is more recent",
-                          mChannel);
-
-            ExitNow();
-        }
-    }
-    else
-    {
-        mActiveTimestamp = dataset.mActiveTimestamp + 1 + Random::GetUint32InRange(0, kMaxTimestampIncrease);
-    }
-
-    dataset.mActiveTimestamp                       = mActiveTimestamp;
-    dataset.mComponents.mIsActiveTimestampPresent  = true;
-    dataset.mChannel                               = mChannel;
-    dataset.mComponents.mIsChannelPresent          = true;
-    dataset.mPendingTimestamp                      = pendingTimestamp;
-    dataset.mComponents.mIsPendingTimestampPresent = true;
-    dataset.mDelay                                 = delayInMs;
-    dataset.mComponents.mIsDelayPresent            = true;
-
-    error = netif.GetPendingDataset().SendSetRequest(dataset, NULL, 0);
-
-    if (error == OT_ERROR_NONE)
-    {
-        otLogInfoUtil("ChannelManager: Sent PendingDatasetSet to change channel to %d", mChannel);
-
-        mState = kStateSentMgmtPendingDataset;
-        mTimer.Start(delayInMs + kChangeCheckWaitInterval);
-    }
-    else
-    {
-        otLogInfoUtil("ChannelManager: %s error in dataset update (channel change %d), retry in %d sec",
-                      otThreadErrorToString(error), mChannel, TimerMilli::MsecToSec(kPendingDatasetTxRetryInterval));
-
+    case OT_ERROR_BUSY:
+    case OT_ERROR_NO_BUFS:
         mTimer.Start(kPendingDatasetTxRetryInterval);
+        break;
+
+    case OT_ERROR_INVALID_STATE:
+        otLogInfoUtil("ChannelManager: Request to change to channel %d failed. Device is disabled", mChannel);
+
+        OT_FALL_THROUGH;
+
+    default:
+        mState = kStateIdle;
+        StartAutoSelectTimer();
+        break;
+    }
+}
+
+void ChannelManager::HandleDatasetUpdateDone(otError aError, void *aContext)
+{
+    static_cast<ChannelManager *>(aContext)->HandleDatasetUpdateDone(aError);
+}
+
+void ChannelManager::HandleDatasetUpdateDone(otError aError)
+{
+    if (aError == OT_ERROR_NONE)
+    {
+        otLogInfoUtil("ChannelManager: Channel changed to %d", mChannel);
+    }
+    else
+    {
+        otLogInfoUtil("ChannelManager: Canceling channel change to %d%s", mChannel,
+                      (aError == OT_ERROR_ALREADY) ? " since current ActiveDataset is more recent" : "");
     }
 
-exit:
-    return;
+    mState = kStateIdle;
+    StartAutoSelectTimer();
 }
 
 void ChannelManager::HandleTimer(Timer &aTimer)
 {
-    aTimer.GetOwner<ChannelManager>().HandleTimer();
+    aTimer.Get<ChannelManager>().HandleTimer();
 }
 
 void ChannelManager::HandleTimer(void)
@@ -238,100 +161,42 @@ void ChannelManager::HandleTimer(void)
     {
     case kStateIdle:
         otLogInfoUtil("ChannelManager: Auto-triggered channel select");
-        IgnoreReturnValue(RequestChannelSelect(false));
+        IgnoreError(RequestChannelSelect(false));
         StartAutoSelectTimer();
         break;
 
-    case kStateSentMgmtPendingDataset:
-        otLogInfoUtil("ChannelManager: Timed out waiting for change to %d, trying again.", mChannel);
-        mState = kStateChangeRequested;
-
-        // fall through
-
     case kStateChangeRequested:
-        PreparePendingDataset();
+        StartDatasetUpdate();
+        break;
+
+    case kStateChangeInProgress:
         break;
     }
 }
 
-void ChannelManager::HandleStateChanged(Notifier::Callback &aCallback, otChangedFlags aFlags)
-{
-    aCallback.GetOwner<ChannelManager>().HandleStateChanged(aFlags);
-}
-
-void ChannelManager::HandleStateChanged(otChangedFlags aFlags)
-{
-    VerifyOrExit((aFlags & OT_CHANGED_THREAD_CHANNEL) != 0);
-    VerifyOrExit(mChannel == GetInstance().Get<Mac::Mac>().GetPanChannel());
-
-    mState = kStateIdle;
-    StartAutoSelectTimer();
-
-    otLogInfoUtil("ChannelManager: Channel successfully changed to %d", mChannel);
-
-exit:
-    return;
-}
-
-#if OPENTHREAD_ENABLE_CHANNEL_MONITOR
-
-/**
- * This function randomly chooses a channel from a given channel mask.
- *
- * @param[in]  aMask  A channel mask.
- *
- * @returns A randomly chosen channel from the given mask, or `ChannelMask::kChannelIteratorFirst` if the mask is empty.
- *
- */
-static uint8_t ChooseRandomChannel(const Mac::ChannelMask &aMask)
-{
-    uint8_t channel     = Mac::ChannelMask::kChannelIteratorFirst;
-    uint8_t numChannels = 0;
-    uint8_t randomIndex;
-
-    VerifyOrExit(!aMask.IsEmpty());
-
-    while (aMask.GetNextChannel(channel) == OT_ERROR_NONE)
-    {
-        numChannels++;
-    }
-
-    randomIndex = Random::GetUint8InRange(0, numChannels);
-
-    channel = Mac::ChannelMask::kChannelIteratorFirst;
-    SuccessOrExit(aMask.GetNextChannel(channel));
-
-    while (randomIndex-- != 0)
-    {
-        SuccessOrExit(aMask.GetNextChannel(channel));
-    }
-
-exit:
-    return channel;
-}
+#if OPENTHREAD_CONFIG_CHANNEL_MONITOR_ENABLE
 
 otError ChannelManager::FindBetterChannel(uint8_t &aNewChannel, uint16_t &aOccupancy)
 {
-    otError          error   = OT_ERROR_NONE;
-    ChannelMonitor & monitor = GetInstance().GetChannelMonitor();
+    otError          error = OT_ERROR_NONE;
     Mac::ChannelMask favoredAndSupported;
     Mac::ChannelMask favoredBest;
     Mac::ChannelMask supportedBest;
     uint16_t         favoredOccupancy;
     uint16_t         supportedOccupancy;
 
-    if (monitor.GetSampleCount() <= kMinChannelMonitorSampleCount)
+    if (Get<ChannelMonitor>().GetSampleCount() <= kMinChannelMonitorSampleCount)
     {
-        otLogInfoUtil("ChannelManager: Too few samples (%d <= %d) to select channel", monitor.GetSampleCount(),
-                      kMinChannelMonitorSampleCount);
+        otLogInfoUtil("ChannelManager: Too few samples (%d <= %d) to select channel",
+                      Get<ChannelMonitor>().GetSampleCount(), kMinChannelMonitorSampleCount);
         ExitNow(error = OT_ERROR_INVALID_STATE);
     }
 
     favoredAndSupported = mFavoredChannelMask;
     favoredAndSupported.Intersect(mSupportedChannelMask);
 
-    favoredBest   = monitor.FindBestChannels(favoredAndSupported, favoredOccupancy);
-    supportedBest = monitor.FindBestChannels(mSupportedChannelMask, supportedOccupancy);
+    favoredBest   = Get<ChannelMonitor>().FindBestChannels(favoredAndSupported, favoredOccupancy);
+    supportedBest = Get<ChannelMonitor>().FindBestChannels(mSupportedChannelMask, supportedOccupancy);
 
     otLogInfoUtil("ChannelManager: Best favored %s, occupancy 0x%04x", favoredBest.ToString().AsCString(),
                   favoredOccupancy);
@@ -356,7 +221,7 @@ otError ChannelManager::FindBetterChannel(uint8_t &aNewChannel, uint16_t &aOccup
 
     VerifyOrExit(!favoredBest.IsEmpty(), error = OT_ERROR_NOT_FOUND);
 
-    aNewChannel = ChooseRandomChannel(favoredBest);
+    aNewChannel = favoredBest.ChooseRandomChannel();
     aOccupancy  = favoredOccupancy;
 
 exit:
@@ -365,7 +230,7 @@ exit:
 
 bool ChannelManager::ShouldAttemptChannelChange(void)
 {
-    uint16_t ccaFailureRate = GetInstance().Get<Mac::Mac>().GetCcaFailureRate();
+    uint16_t ccaFailureRate = Get<Mac::Mac>().GetCcaFailureRate();
     bool     shouldAttempt  = (ccaFailureRate >= kCcaFailureRateThreshold);
 
     otLogInfoUtil("ChannelManager: CCA-err-rate: 0x%04x %s 0x%04x, selecting channel: %s", ccaFailureRate,
@@ -383,14 +248,14 @@ otError ChannelManager::RequestChannelSelect(bool aSkipQualityCheck)
     otLogInfoUtil("ChannelManager: Request to select channel (skip quality check: %s)",
                   aSkipQualityCheck ? "yes" : "no");
 
-    VerifyOrExit(GetInstance().Get<Mle::Mle>().GetRole() != OT_DEVICE_ROLE_DISABLED, error = OT_ERROR_INVALID_STATE);
+    VerifyOrExit(!Get<Mle::Mle>().IsDisabled(), error = OT_ERROR_INVALID_STATE);
 
     VerifyOrExit(aSkipQualityCheck || ShouldAttemptChannelChange());
 
     SuccessOrExit(error = FindBetterChannel(newChannel, newOccupancy));
 
-    curChannel   = GetInstance().Get<Mac::Mac>().GetPanChannel();
-    curOccupancy = GetInstance().GetChannelMonitor().GetChannelOccupancy(curChannel);
+    curChannel   = Get<Mac::Mac>().GetPanChannel();
+    curOccupancy = Get<ChannelMonitor>().GetChannelOccupancy(curChannel);
 
     if (newChannel == curChannel)
     {
@@ -423,16 +288,7 @@ exit:
 
     return error;
 }
-
-#else // OPENTHREAD_ENABLE_CHANNEL_MONITOR
-
-otError ChannelManager::RequestChannelSelect(bool)
-{
-    otLogInfoUtil("ChannelManager: ChannelMonitor feature is disabled - cannot select channel");
-    return OT_ERROR_DISABLED_FEATURE;
-}
-
-#endif // OPENTHREAD_ENABLE_CHANNEL_MONITOR
+#endif // OPENTHREAD_CONFIG_CHANNEL_MONITOR_ENABLE
 
 void ChannelManager::StartAutoSelectTimer(void)
 {
@@ -440,7 +296,7 @@ void ChannelManager::StartAutoSelectTimer(void)
 
     if (mAutoSelectEnabled)
     {
-        mTimer.Start(TimerMilli::SecToMsec(mAutoSelectInterval));
+        mTimer.Start(Time::SecToMsec(mAutoSelectInterval));
     }
     else
     {
@@ -456,7 +312,7 @@ void ChannelManager::SetAutoChannelSelectionEnabled(bool aEnabled)
     if (aEnabled != mAutoSelectEnabled)
     {
         mAutoSelectEnabled = aEnabled;
-        IgnoreReturnValue(RequestChannelSelect(false));
+        IgnoreError(RequestChannelSelect(false));
         StartAutoSelectTimer();
     }
 }
@@ -466,13 +322,13 @@ otError ChannelManager::SetAutoChannelSelectionInterval(uint32_t aInterval)
     otError  error        = OT_ERROR_NONE;
     uint32_t prevInterval = mAutoSelectInterval;
 
-    VerifyOrExit((aInterval != 0) && (aInterval < TimerMilli::MsecToSec(Timer::kMaxDt)), error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit((aInterval != 0) && (aInterval <= Time::MsecToSec(Timer::kMaxDelay)), error = OT_ERROR_INVALID_ARGS);
 
     mAutoSelectInterval = aInterval;
 
     if (mAutoSelectEnabled && (mState == kStateIdle) && mTimer.IsRunning() && (prevInterval != aInterval))
     {
-        mTimer.StartAt(mTimer.GetFireTime() - prevInterval, aInterval);
+        mTimer.StartAt(mTimer.GetFireTime() - Time::SecToMsec(prevInterval), Time::SecToMsec(aInterval));
     }
 
 exit:
@@ -481,14 +337,14 @@ exit:
 
 void ChannelManager::SetSupportedChannels(uint32_t aChannelMask)
 {
-    mSupportedChannelMask.SetMask(aChannelMask & OT_RADIO_SUPPORTED_CHANNELS);
+    mSupportedChannelMask.SetMask(aChannelMask & Get<Mac::Mac>().GetSupportedChannelMask().GetMask());
 
     otLogInfoUtil("ChannelManager: Supported channels: %s", mSupportedChannelMask.ToString().AsCString());
 }
 
 void ChannelManager::SetFavoredChannels(uint32_t aChannelMask)
 {
-    mFavoredChannelMask.SetMask(aChannelMask & OT_RADIO_SUPPORTED_CHANNELS);
+    mFavoredChannelMask.SetMask(aChannelMask & Get<Mac::Mac>().GetSupportedChannelMask().GetMask());
 
     otLogInfoUtil("ChannelManager: Favored channels: %s", mFavoredChannelMask.ToString().AsCString());
 }
@@ -496,4 +352,4 @@ void ChannelManager::SetFavoredChannels(uint32_t aChannelMask)
 } // namespace Utils
 } // namespace ot
 
-#endif // #if OPENTHREAD_ENABLE_CHANNEL_MANAGER
+#endif // #if OPENTHREAD_CONFIG_CHANNEL_MANAGER_ENABLE

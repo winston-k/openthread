@@ -38,7 +38,7 @@
 
 #include <openthread/instance.h>
 
-#if !OPENTHREAD_ENABLE_MULTIPLE_INSTANCES
+#include "common/non_copyable.hpp"
 
 namespace ot {
 namespace Crypto {
@@ -54,7 +54,7 @@ namespace Crypto {
  * This class implements mbedTLS memory.
  *
  */
-class MbedTls
+class MbedTls : private NonCopyable
 {
 public:
     /**
@@ -62,6 +62,16 @@ public:
      *
      */
     MbedTls(void);
+
+    /**
+     * This method converts an mbed TLS error to OpenThread error.
+     *
+     * @param[in] aMbedTlsError  The mbed TLS error.
+     *
+     * @returns The mapped otError.
+     *
+     */
+    static otError MapError(int aMbedTlsError);
 };
 
 /**
@@ -71,7 +81,5 @@ public:
 
 } // namespace Crypto
 } // namespace ot
-
-#endif // #if !OPENTHREAD_ENABLE_MULTIPLE_INSTANCES
 
 #endif // OT_MBEDTLS_HPP_

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2016, The OpenThread Authors.
 #  All rights reserved.
@@ -30,17 +30,20 @@
 import io
 import ipaddress
 import struct
-import sys
 
 import coap
 import common
 import dtls
 import ipv6
-import lowpan
 import mac802154
 import mle
 
 from enum import IntEnum
+
+
+class DropPacketException(Exception):
+    pass
+
 
 class MessageType(IntEnum):
     MLE = 0
@@ -145,7 +148,7 @@ class Message(object):
 
         elif self._mac_header.frame_type == mac802154.MacHeader.FrameType.DATA:
             self._type = MessageType.DATA
-        elif self._mac_header.frame_type == mac802154.MacHeader.FrameType.COMMAND:
+        elif (self._mac_header.frame_type == mac802154.MacHeader.FrameType.COMMAND):
             self._type = MessageType.COMMAND
         else:
             raise ValueError('Invalid mac frame type %d' % self._mac_header.frame_type)
@@ -191,7 +194,7 @@ class Message(object):
         if self.type != MessageType.MLE:
             raise ValueError("Invalid message type. Expected MLE message.")
 
-        assert(self.mle.command.type == command_type)
+        assert self.mle.command.type == command_type
 
     def assertMleMessageContainsTlv(self, tlv_class_type):
         """To confirm if Mle message contains the TLV type.
@@ -211,7 +214,7 @@ class Message(object):
                 contains_tlv = True
                 break
 
-        assert(contains_tlv == True)
+        assert contains_tlv
         return tlv
 
     def assertAssignedRouterQuantity(self, router_quantity):
@@ -225,9 +228,9 @@ class Message(object):
 
         count = 0
         for i in range(1, 65):
-            count += (router_id_mask & 1)
-            router_id_mask = (router_id_mask >> 1)
-        assert(count == router_quantity)
+            count += router_id_mask & 1
+            router_id_mask = router_id_mask >> 1
+        assert count == router_quantity
 
     def assertMleMessageDoesNotContainTlv(self, tlv_class_type):
         if self.type != MessageType.MLE:
@@ -239,7 +242,7 @@ class Message(object):
                 contains_tlv = True
                 break
 
-        assert(contains_tlv == False)
+        assert contains_tlv is False
 
     def assertMleMessageContainsOptionalTlv(self, tlv_class_type):
         if self.type != MessageType.MLE:
@@ -251,7 +254,7 @@ class Message(object):
                 contains_tlv = True
                 break
 
-        if contains_tlv == True:
+        if contains_tlv:
             print("MleMessage contains optional TLV: {}".format(tlv_class_type))
         else:
             print("MleMessage doesn't contain optional TLV: {}".format(tlv_class_type))
@@ -274,7 +277,7 @@ class Message(object):
                 contains_tlv = True
                 break
 
-        assert(contains_tlv == True)
+        assert contains_tlv
 
     def assertCoapMessageDoesNotContainTlv(self, tlv_class_type):
         if self.type != MessageType.COAP:
@@ -286,16 +289,14 @@ class Message(object):
                 contains_tlv = True
                 break
 
-        assert(contains_tlv == False)
+        assert contains_tlv is False
 
     def assertCoapMessageContainsOptionalTlv(self, tlv_class_type):
         if self.type != MessageType.COAP:
             raise ValueError("Invalid message type. Expected CoAP message.")
 
-        contains_tlv = False
         for tlv in self.coap.payload:
             if isinstance(tlv, tlv_class_type):
-                contains_tlv = True
                 break
 
         print("CoapMessage doesn't contain optional TLV: {}".format(tlv_class_type))
@@ -304,13 +305,13 @@ class Message(object):
         if self.type != MessageType.COAP:
             raise ValueError("Invalid message type. Expected CoAP message.")
 
-        assert(uri_path == self.coap.uri_path)
+        assert uri_path == self.coap.uri_path
 
     def assertCoapMessageCode(self, code):
         if self.type != MessageType.COAP:
             raise ValueError("Invalid message type. Expected CoAP message.")
 
-        assert(code == self.coap.code)
+        assert code == self.coap.code
 
     def assertSentToNode(self, node):
         sent_to_node = False
@@ -330,13 +331,13 @@ class Message(object):
             if self.mac_header.dest_address == mac_address:
                 sent_to_node = True
 
-        assert sent_to_node == True
+        assert sent_to_node
 
     def assertSentToDestinationAddress(self, ipv6_address):
-        if sys.version_info[0] == 2:
-            ipv6_address = ipv6_address.decode("utf-8")
+        assert (self.ipv6_packet.ipv6_header.destination_address == ipaddress.ip_address(ipv6_address))
 
-        assert self.ipv6_packet.ipv6_header.destination_address == ipaddress.ip_address(ipv6_address)
+    def assertSentFromSourceAddress(self, ipv6_address):
+        assert (self.ipv6_packet.ipv6_header.source_address == ipaddress.ip_address(ipv6_address))
 
     def assertSentWithHopLimit(self, hop_limit):
         assert self.ipv6_packet.ipv6_header.hop_limit == hop_limit
@@ -348,15 +349,19 @@ class Message(object):
         assert isinstance(self.ipv6_packet.upper_layer_protocol, ipv6.UDPDatagram)
         return self.ipv6_packet.upper_layer_protocol.header.dst_port
 
+    def is_data_poll(self):
+        return self._type == MessageType.COMMAND and \
+            self._mac_header.command_type == mac802154.MacHeader.CommandIdentifier.DATA_REQUEST
+
     def __repr__(self):
-        if self.type == MessageType.DTLS and self.dtls.content_type == dtls.ContentType.HANDSHAKE:
+        if (self.type == MessageType.DTLS and self.dtls.content_type == dtls.ContentType.HANDSHAKE):
             return "Message(type={})".format(str(self.dtls.handshake_type))
         return "Message(type={})".format(MessageType(self.type).name)
 
 
 class MessagesSet(object):
 
-    def __init__(self, messages, commissioning_messages=[]):
+    def __init__(self, messages, commissioning_messages=()):
         self._messages = messages
         self._commissioning_messages = commissioning_messages
 
@@ -367,6 +372,14 @@ class MessagesSet(object):
     @property
     def commissioning_messages(self):
         return self._commissioning_messages
+
+    def next_data_poll(self):
+        while True:
+            message = self.next_message_of(MessageType.COMMAND, False)
+            if not message:
+                break
+            elif message.is_data_poll():
+                return message
 
     def next_coap_message(self, code, uri_path=None, assert_enabled=True):
         message = None
@@ -388,11 +401,11 @@ class MessagesSet(object):
             break
 
         if assert_enabled:
-            assert message is not None, "Could not find CoapMessage with code: {}".format(code)
+            assert (message is not None), "Could not find CoapMessage with code: {}".format(code)
 
         return message
 
-    def last_mle_message(self, command_type, assert_enabled = True):
+    def last_mle_message(self, command_type, assert_enabled=True):
         """Get the last Mle Message with specified type from existing capture.
 
         Args:
@@ -411,13 +424,13 @@ class MessagesSet(object):
             if m.type != MessageType.MLE:
                 continue
 
-            #for command_type in command_types:
+            # for command_type in command_types:
             if m.mle.command.type == command_type:
                 message = m
                 break
 
         if assert_enabled:
-            assert message is not None, "Could not find MleMessage with type: {}".format(command_type)
+            assert (message is not None), "Could not find MleMessage with type: {}".format(command_type)
 
         return message
 
@@ -425,9 +438,9 @@ class MessagesSet(object):
         message = self.next_mle_message_of_one_of_command_types(command_type)
 
         if assert_enabled:
-            assert message is not None, "Could not find MleMessage of the type: {}".format(command_type)
+            assert (message is not None), "Could not find MleMessage of the type: {}".format(command_type)
 
-        if sent_to_node != None:
+        if sent_to_node is not None:
             message.assertSentToNode(sent_to_node)
 
         return message
@@ -472,7 +485,7 @@ class MessagesSet(object):
             break
 
         if assert_enabled:
-            assert message is not None, "Could not find Message of the type: {}".format(message_type)
+            assert (message is not None), "Could not find Message of the type: {}".format(message_type)
 
         return message
 
@@ -489,12 +502,11 @@ class MessagesSet(object):
                 continue
             if msg.dtls.content_type != content_type:
                 continue
-            if (content_type == dtls.ContentType.HANDSHAKE and
-                msg.dtls.handshake_type != handshake_type):
+            if (content_type == dtls.ContentType.HANDSHAKE and msg.dtls.handshake_type != handshake_type):
                 continue
             return msg
 
-        t = handshake_type if content_type == dtls.ContentType.HANDSHAKE else content_type
+        t = (handshake_type if content_type == dtls.ContentType.HANDSHAKE else content_type)
         raise ValueError("Could not find DTLS message of type: {}".format(str(t)))
 
     def contains_icmp_message(self):
@@ -565,30 +577,35 @@ class MessageFactory:
         self._lowpan_parser.set_lowpan_context(cid, prefix)
 
     def create(self, data):
-        message = Message()
-        message.channel = struct.unpack(">B", data.read(1))
+        try:
+            message = Message()
+            message.channel = struct.unpack(">B", data.read(1))
 
-        # Parse MAC header
-        mac_frame = self._parse_mac_frame(data)
-        message.mac_header = mac_frame.header
+            # Parse MAC header
+            mac_frame = self._parse_mac_frame(data)
+            message.mac_header = mac_frame.header
 
-        if message.mac_header.frame_type != mac802154.MacHeader.FrameType.DATA:
-            return [message]
+            if message.mac_header.frame_type != mac802154.MacHeader.FrameType.DATA:
+                return [message]
 
-        message_info = common.MessageInfo()
-        message_info.source_mac_address = message.mac_header.src_address
-        message_info.destination_mac_address = message.mac_header.dest_address
+            message_info = common.MessageInfo()
+            message_info.source_mac_address = message.mac_header.src_address
+            message_info.destination_mac_address = message.mac_header.dest_address
 
-        # Create stream with 6LoWPAN datagram
-        lowpan_payload = io.BytesIO(mac_frame.payload.data)
+            # Create stream with 6LoWPAN datagram
+            lowpan_payload = io.BytesIO(mac_frame.payload.data)
 
-        ipv6_packet = self._lowpan_parser.parse(lowpan_payload, message_info)
-        if ipv6_packet is None:
-            return [message]
+            ipv6_packet = self._lowpan_parser.parse(lowpan_payload, message_info)
+            if ipv6_packet is None:
+                return [message]
 
-        message.ipv6_packet = ipv6_packet
+            message.ipv6_packet = ipv6_packet
 
-        if message.type == MessageType.MLE:
-            self._add_device_descriptors(message)
+            if message.type == MessageType.MLE:
+                self._add_device_descriptors(message)
 
-        return message.try_extract_dtls_messages()
+            return message.try_extract_dtls_messages()
+
+        except mac802154.KeyIdMode0Exception:
+            print('Received packet with key_id_mode = 0, cannot be handled in test scripts')
+            raise DropPacketException

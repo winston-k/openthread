@@ -37,6 +37,7 @@
 #include "openthread-core-config.h"
 
 #include "common/message.hpp"
+#include "common/non_copyable.hpp"
 
 namespace ot {
 namespace Ip6 {
@@ -55,7 +56,7 @@ namespace Ip6 {
  * This class implements an IPv6 datagram filter.
  *
  */
-class Filter
+class Filter : private NonCopyable
 {
 public:
     /**
@@ -80,8 +81,9 @@ public:
      *
      * @param[in]  aPort  The port value.
      *
-     * @retval OT_ERROR_NONE     The port was successfully added to the allowed unsecure port list.
-     * @retval OT_ERROR_NO_BUFS  The unsecure port list is full.
+     * @retval OT_ERROR_NONE         The port was successfully added to the allowed unsecure port list.
+     * @retval OT_ERROR_INVALID_ARGS The port is invalid (value 0 is reserved for internal use).
+     * @retval OT_ERROR_NO_BUFS      The unsecure port list is full.
      *
      */
     otError AddUnsecurePort(uint16_t aPort);
@@ -91,11 +93,22 @@ public:
      *
      * @param[in]  aPort  The port value.
      *
-     * @retval OT_ERROR_NONE       The port was successfully removed from the allowed unsecure port list.
-     * @retval OT_ERROR_NOT_FOUND  The port was not found in the unsecure port list.
+     * @retval OT_ERROR_NONE         The port was successfully removed from the allowed unsecure port list.
+     * @retval OT_ERROR_INVALID_ARGS The port is invalid (value 0 is reserved for internal use).
+     * @retval OT_ERROR_NOT_FOUND    The port was not found in the unsecure port list.
      *
      */
     otError RemoveUnsecurePort(uint16_t aPort);
+
+    /**
+     * This method checks whether a port is in the unsecure port list.
+     *
+     * @param[in]  aPort  The port value.
+     *
+     * @returns Whether the given port is in the unsecure port list.
+     *
+     */
+    bool IsUnsecurePort(uint16_t aPort);
 
     /**
      * This method removes all ports from the allowed unsecure port list.

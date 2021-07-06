@@ -1,16 +1,22 @@
 *.a
 *.bak
 *.db
+*.flash
 *.gcda
 *.gcno
 *.log
 *.o
 *.lo
 *.la
+*.ninja*
 *.opendb
 *.orig
+*.pcap
 *.pyc
 *.suo
+*.swn
+*.swo
+*.swp
 *.trs
 *.user
 *.bak
@@ -24,13 +30,15 @@
 aclocal.m4
 autom4te.cache
 build
+CMakeCache.txt
+CMakeFiles
+cmake_install.cmake
 configure
 config.log
 config.status
 doc/Doxyfile
 doc/html
-etc/visual-studio/BundleArtifacts
-etc/visual-studio/Generated Files
+etc/cmake/openthread-config-generic.h
 include/openthread-config.h
 include/openthread-config.h.in
 include/openthread-config-generic.h
@@ -50,3 +58,11 @@ third_party/nlbuild-autotools/repo/third_party/autoconf/m4/ltsugar.m4
 third_party/nlbuild-autotools/repo/third_party/autoconf/m4/ltversion.m4
 third_party/nlbuild-autotools/repo/third_party/autoconf/m4/lt~obsolete.m4
 third_party/nlbuild-autotools/repo/third_party/autoconf/missing
+/tmp/
+
+# C-Lion / IDEA files
+.idea/**
+cmake-build-*/**
+
+# Python bytecodes
+__pycache__

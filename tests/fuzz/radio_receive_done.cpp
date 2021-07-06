@@ -26,6 +26,8 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  */
 
+#define MAX_ITERATIONS 100
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -37,27 +39,26 @@
 #include <openthread/thread_ftd.h>
 #include <openthread/platform/radio.h>
 
+#include "fuzzer_platform.h"
 #include "common/code_utils.hpp"
-
-extern "C" void FuzzerPlatformInit(void);
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     const otPanId panId = 0xdead;
 
-    otInstance * instance = NULL;
+    otInstance * instance = nullptr;
     otRadioFrame frame;
-    uint8_t *    buf = NULL;
+    uint8_t *    buf = nullptr;
 
     VerifyOrExit(size <= OT_RADIO_FRAME_MAX_SIZE);
 
     FuzzerPlatformInit();
 
     instance = otInstanceInitSingle();
-    otLinkSetPanId(instance, panId);
-    otIp6SetEnabled(instance, true);
-    otThreadSetEnabled(instance, true);
-    otThreadBecomeLeader(instance);
+    IgnoreError(otLinkSetPanId(instance, panId));
+    IgnoreError(otIp6SetEnabled(instance, true));
+    IgnoreError(otThreadSetEnabled(instance, true));
+    IgnoreError(otThreadBecomeLeader(instance));
 
     buf = static_cast<uint8_t *>(malloc(size));
 
@@ -70,19 +71,26 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     otPlatRadioReceiveDone(instance, &frame, OT_ERROR_NONE);
 
-    while (otTaskletsArePending(instance))
+    VerifyOrExit(!FuzzerPlatformResetWasRequested());
+
+    for (int i = 0; i < MAX_ITERATIONS; i++)
     {
-        otTaskletsProcess(instance);
+        while (otTaskletsArePending(instance))
+        {
+            otTaskletsProcess(instance);
+        }
+
+        FuzzerPlatformProcess(instance);
     }
 
 exit:
 
-    if (buf != NULL)
+    if (buf != nullptr)
     {
         free(buf);
     }
 
-    if (instance != NULL)
+    if (instance != nullptr)
     {
         otInstanceFinalize(instance);
     }

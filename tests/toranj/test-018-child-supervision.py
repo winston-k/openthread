@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2018, The OpenThread Authors.
 #  All rights reserved.
@@ -30,12 +30,12 @@ import time
 import wpan
 from wpan import verify
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test description: Child Supervision feature
 #
 # This test covers the behavior of Child Supervision feature.
 #
-# This test uses MAC whitelisting to emulate the situation where a child is
+# This test uses MAC allowlisting to emulate the situation where a child is
 # removed from parent's child table while the child continues to stay attached
 # to the parent (since data polls from child are acked at radio platform layer).
 # Specifically the test verifies that once supervision check is enabled on the
@@ -50,10 +50,10 @@ from wpan import verify
 #
 
 test_name = __file__[:-3] if __file__.endswith('.py') else __file__
-print '-' * 120
-print 'Starting \'{}\''.format(test_name)
+print('-' * 120)
+print('Starting \'{}\''.format(test_name))
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Creating `wpan.Nodes` instances
 
 speedup = 2
@@ -62,12 +62,12 @@ wpan.Node.set_time_speedup_factor(speedup)
 parent = wpan.Node()
 child = wpan.Node()
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Init all nodes
 
 wpan.Node.init_all_nodes()
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Build network topology
 
 CHILD_TIMEOUT = 6
@@ -80,7 +80,7 @@ child.set(wpan.WPAN_THREAD_CHILD_TIMEOUT, str(CHILD_TIMEOUT))
 parent.form("child-sup")
 child.join_node(parent, wpan.JOIN_TYPE_SLEEPY_END_DEVICE)
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test implementation
 
 # Disable child supervision on child and parent
@@ -98,19 +98,21 @@ child_table = wpan.parse_child_table_result(parent.get(wpan.WPAN_THREAD_CHILD_TA
 verify(len(child_table) == 1)
 verify(int(child_table[0].timeout, 0) == CHILD_TIMEOUT)
 
-# Enabling white-listing on parent
+# Enabling allowlisting on parent
 #
-# Since child is not in parent's whitelist, the data polls from child
+# Since child is not in parent's allowlist, the data polls from child
 # should be rejected and the child should be removed from parent's
 # child table after timeout. The child however should continue to
 # stay attached (since data polls are acked by radio driver) and
 # supervision check is disabled on the child.
 
-parent.set(wpan.WPAN_MAC_WHITELIST_ENABLED, '1')
+parent.set(wpan.WPAN_MAC_ALLOWLIST_ENABLED, '1')
+
 
 def check_child_is_removed_from_parent_child_table():
-	child_table = wpan.parse_child_table_result(parent.get(wpan.WPAN_THREAD_CHILD_TABLE))
-	verify(len(child_table) == 0)
+    child_table = wpan.parse_child_table_result(parent.get(wpan.WPAN_THREAD_CHILD_TABLE))
+    verify(len(child_table) == 0)
+
 
 # wait till child is removed from parent's child table
 # after this child should still be associated
@@ -120,24 +122,31 @@ verify(child.is_associated())
 # Enable supervision check on child and expect the child to
 # become detached after the check timeout
 
-child.set(wpan.WPAN_CHILD_SUPERVISION_CHECK_TIMEOUT, str(CHILD_SUPERVISION_CHECK_TIMEOUT))
+child.set(
+    wpan.WPAN_CHILD_SUPERVISION_CHECK_TIMEOUT,
+    str(CHILD_SUPERVISION_CHECK_TIMEOUT),
+)
+
 
 def check_child_is_detached():
-	verify(not child.is_associated())
+    verify(not child.is_associated())
+
 
 wpan.verify_within(check_child_is_detached, CHILD_SUPERVISION_CHECK_TIMEOUT / speedup + 8)
 
-#- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-# Enable child supervision on parent and disable white-listing
+# Enable child supervision on parent and disable allowlisting
 
 parent.set(wpan.WPAN_CHILD_SUPERVISION_INTERVAL, str(PARENT_SUPERVISION_INTERVAL))
-parent.set(wpan.WPAN_MAC_WHITELIST_ENABLED, '0')
+parent.set(wpan.WPAN_MAC_ALLOWLIST_ENABLED, '0')
 
 # Wait for the child to attach back
 
+
 def check_child_is_attached():
-	verify(child.is_associated())
+    verify(child.is_associated())
+
 
 wpan.verify_within(check_child_is_attached, 5)
 
@@ -161,9 +170,9 @@ parent.set(wpan.WPAN_CHILD_SUPERVISION_INTERVAL, '0')
 time.sleep(CHILD_SUPERVISION_CHECK_TIMEOUT * 3 / speedup)
 verify(child.is_associated())
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test finished
 
 wpan.Node.finalize_all_nodes()
 
-print '\'{}\' passed.'.format(test_name)
+print('\'{}\' passed.'.format(test_name))

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2016, The OpenThread Authors.
 #  All rights reserved.
@@ -27,61 +27,352 @@
 #  POSSIBILITY OF SUCH DAMAGE.
 #
 
-import time
 import unittest
 
-import node
 import mle
 import network_layer
-import config
+import thread_cert
+from pktverify.consts import MLE_ADVERTISEMENT, MLE_PARENT_RESPONSE, MLE_CHILD_ID_RESPONSE, ADDR_SOL_URI, SOURCE_ADDRESS_TLV, CHALLENGE_TLV, RESPONSE_TLV, LINK_LAYER_FRAME_COUNTER_TLV, ADDRESS16_TLV, ROUTE64_TLV, LEADER_DATA_TLV, NETWORK_DATA_TLV, CONNECTIVITY_TLV, LINK_MARGIN_TLV, VERSION_TLV, ADDRESS_REGISTRATION_TLV, NL_MAC_EXTENDED_ADDRESS_TLV, NL_RLOC16_TLV, NL_STATUS_TLV, NL_ROUTER_MASK_TLV, COAP_CODE_ACK, ADDR_SOL_NA, ADDR_SOL_SUCCESS
+from pktverify.packet_verifier import PacketVerifier
+from pktverify.null_field import nullField
 
 DUT_LEADER = 1
 ROUTER_1 = 2
 ROUTER_31 = 32
 ROUTER_32 = 33
 
-class Cert_5_2_3_LeaderReject2Hops(unittest.TestCase):
-    def setUp(self):
-        self.simulator = config.create_default_simulator()
+# Test Purpose and Description:
+# -----------------------------
+# The purpose of this test case is to show that the DUT will
+# only allow 32 active routers on the network and reject the
+# Address Solicit Request from a 33rd router - that is
+# 2-hops away - with a No Address Available status.
+#
+# Test Topology:
+# -------------
+#         Leader[DUT]
+#         /    \
+# Router_1 --- Router_31
+#    |
+#    |
+# Router_32
+#
+# DUT Types:
+# ----------
+# Leader
 
-        self.nodes = {}
 
-        self.nodes[DUT_LEADER] = node.Node(DUT_LEADER, simulator=self.simulator)
-        self.nodes[DUT_LEADER].set_panid(0xface)
-        self.nodes[DUT_LEADER].set_mode('rsdn')
-        self.nodes[DUT_LEADER].enable_whitelist()
-        self.nodes[DUT_LEADER].set_router_upgrade_threshold(32)
-        self.nodes[DUT_LEADER].set_router_downgrade_threshold(33)
+class Cert_5_2_3_LeaderReject2Hops(thread_cert.TestCase):
+    USE_MESSAGE_FACTORY = False
 
-        for i in range(2, 33):
-            self.nodes[i] = node.Node(i, simulator=self.simulator)
-            self.nodes[i].set_panid(0xface)
-            self.nodes[i].set_mode('rsdn')
-            self.nodes[i].add_whitelist(self.nodes[DUT_LEADER].get_addr64())
-            self.nodes[DUT_LEADER].add_whitelist(self.nodes[i].get_addr64())
-            self.nodes[i].enable_whitelist()
-            self.nodes[i].set_router_upgrade_threshold(33)
-            self.nodes[i].set_router_downgrade_threshold(33)
-            self.nodes[i].set_router_selection_jitter(1)
-
-        self.nodes[ROUTER_32] = node.Node(ROUTER_32, simulator=self.simulator)
-        self.nodes[ROUTER_32].set_panid(0xface)
-        self.nodes[ROUTER_32].set_mode('rsdn')
-        self.nodes[ROUTER_32].add_whitelist(self.nodes[ROUTER_1].get_addr64())
-        self.nodes[ROUTER_1].add_whitelist(self.nodes[ROUTER_32].get_addr64())
-        self.nodes[ROUTER_32].enable_whitelist()
-        self.nodes[ROUTER_32].set_router_upgrade_threshold(33)
-        self.nodes[ROUTER_32].set_router_downgrade_threshold(33)
-        self.nodes[ROUTER_32].set_router_selection_jitter(1)
-
-    def tearDown(self):
-        for node in list(self.nodes.values()):
-            node.stop()
-            node.destroy()
-        self.simulator.stop()
+    TOPOLOGY = {
+        DUT_LEADER: {
+            'name':
+                'LEADER',
+            'mode':
+                'rdn',
+            'panid':
+                0xface,
+            'router_downgrade_threshold':
+                33,
+            'router_upgrade_threshold':
+                32,
+            'allowlist': [
+                ROUTER_1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+                28, 29, 30, 31, ROUTER_31
+            ]
+        },
+        ROUTER_1: {
+            'name': 'ROUTER_1',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER, ROUTER_32]
+        },
+        3: {
+            'name': 'ROUTER_2',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        4: {
+            'name': 'ROUTER_3',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        5: {
+            'name': 'ROUTER_4',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        6: {
+            'name': 'ROUTER_5',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        7: {
+            'name': 'ROUTER_6',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        8: {
+            'name': 'ROUTER_7',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        9: {
+            'name': 'ROUTER_8',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        10: {
+            'name': 'ROUTER_9',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        11: {
+            'name': 'ROUTER_10',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        12: {
+            'name': 'ROUTER_11',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        13: {
+            'name': 'ROUTER_12',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        14: {
+            'name': 'ROUTER_13',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        15: {
+            'name': 'ROUTER_14',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        16: {
+            'name': 'ROUTER_15',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        17: {
+            'name': 'ROUTER_16',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        18: {
+            'name': 'ROUTER_17',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        19: {
+            'name': 'ROUTER_18',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        20: {
+            'name': 'ROUTER_19',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        21: {
+            'name': 'ROUTER_20',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        22: {
+            'name': 'ROUTER_21',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        23: {
+            'name': 'ROUTER_22',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        24: {
+            'name': 'ROUTER_23',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        25: {
+            'name': 'ROUTER_24',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        26: {
+            'name': 'ROUTER_25',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        27: {
+            'name': 'ROUTER_26',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        28: {
+            'name': 'ROUTER_27',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        29: {
+            'name': 'ROUTER_28',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        30: {
+            'name': 'ROUTER_29',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        31: {
+            'name': 'ROUTER_30',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        ROUTER_31: {
+            'name': 'ROUTER_31',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [DUT_LEADER]
+        },
+        ROUTER_32: {
+            'name': 'ROUTER_32',
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_downgrade_threshold': 33,
+            'router_selection_jitter': 1,
+            'router_upgrade_threshold': 33,
+            'allowlist': [ROUTER_1]
+        },
+    }
 
     def test(self):
-        # 1
         self.nodes[DUT_LEADER].start()
         self.simulator.go(5)
         self.assertEqual(self.nodes[DUT_LEADER].get_state(), 'leader')
@@ -90,40 +381,111 @@ class Cert_5_2_3_LeaderReject2Hops(unittest.TestCase):
             self.nodes[i].start()
             self.simulator.go(5)
             self.assertEqual(self.nodes[i].get_state(), 'router')
+        self.collect_rlocs()
 
-        leader_messages = self.simulator.get_messages_sent_by(DUT_LEADER)
-
-        # 2
         self.nodes[ROUTER_31].start()
         self.simulator.go(5)
         self.assertEqual(self.nodes[ROUTER_31].get_state(), 'router')
 
-        # 3 - DUT_LEADER
-        # This method flushes the message queue so calling this method again will return only the newly logged messages.
-        leader_messages = self.simulator.get_messages_sent_by(DUT_LEADER)
-        msg = leader_messages.next_coap_message('2.04')
-        msg.assertCoapMessageContainsTlv(network_layer.Status)
-        msg.assertCoapMessageContainsTlv(network_layer.RouterMask)
-        msg.assertCoapMessageContainsTlv(network_layer.Rloc16)
-
-        status_tlv = msg.get_coap_message_tlv(network_layer.Status)
-        self.assertEqual(network_layer.StatusValues.SUCCESS, status_tlv.status)
-
-        # 4 - DUT_LEADER
-        msg = leader_messages.last_mle_message(mle.CommandType.ADVERTISEMENT)
-        msg.assertAssignedRouterQuantity(32)
-
-        # 5 - Router_32
         self.nodes[ROUTER_32].start()
         self.simulator.go(5)
 
-        # 6 - DUT_LEADER
-        leader_messages = self.simulator.get_messages_sent_by(DUT_LEADER)
-        msg = leader_messages.next_coap_message('2.04')
-        msg.assertCoapMessageContainsTlv(network_layer.Status)
+    def verify(self, pv: PacketVerifier):
+        pkts = pv.pkts
+        pv.summary.show()
 
-        status_tlv = msg.get_coap_message_tlv(network_layer.Status)
-        self.assertEqual(network_layer.StatusValues.NO_ADDRESS_AVAILABLE, status_tlv.status)
+        LEADER = pv.vars['LEADER']
+        LEADER_RLOC = pv.vars['LEADER_RLOC']
+        ROUTER_31 = pv.vars['ROUTER_31']
+        ROUTER_32 = pv.vars['ROUTER_32']
+
+        # Step 1: Topology is created, the DUT is the Leader of the network
+        #         and there is a total of 32 active routers, including the Leader.
+        for i in range(1, 32):
+            pv.verify_attached('ROUTER_%d' % i)
+
+        # Step 2: Router_31 to attaches to the network and sends an Address
+        #         Solicit Request to become an active router.
+
+        _pkt = pkts.filter_wpan_src64(ROUTER_31).\
+            filter_ipv6_dst(LEADER_RLOC).\
+            filter_coap_request(ADDR_SOL_URI).\
+            filter(lambda p: {
+                              NL_MAC_EXTENDED_ADDRESS_TLV,
+                              NL_STATUS_TLV
+                              } == set(p.coap.tlv.type)
+                  ).\
+            must_next()
+
+        # Step 3: Leader sends an Address Solicit Response.
+        #         Ensure the Address Solicit Response is properly formatted:
+        #         CoAP Response Code
+        #             2.04 Changed
+        #         CoAP Payload
+        #             - Status TLV (value = Success)
+        #             - RLOC16 TLV
+        #             - Router Mask TLV
+
+        pkts.filter_wpan_src64(LEADER).\
+            filter_ipv6_dst(_pkt.ipv6.src).\
+            filter_coap_ack(ADDR_SOL_URI).\
+            filter(lambda p: {
+                              NL_STATUS_TLV,
+                              NL_RLOC16_TLV,
+                              NL_ROUTER_MASK_TLV
+                              } == set(p.coap.tlv.type) and\
+                   p.coap.code == COAP_CODE_ACK and\
+                   p.thread_address.tlv.status == ADDR_SOL_SUCCESS\
+                   ).\
+            must_next()
+
+        # Step 4: Leader The DUT sends MLE Advertisements.
+        #         The MLE Advertisements from the Leader MUST contain
+        #         the Route64 TLV with 32 assigned Router IDs.
+
+        pkts.filter_wpan_src64(LEADER).\
+            filter_LLANMA().\
+            filter_mle_cmd(MLE_ADVERTISEMENT).\
+            filter(lambda p: {
+                              LEADER_DATA_TLV,
+                              ROUTE64_TLV,
+                              SOURCE_ADDRESS_TLV
+                              } == set(p.mle.tlv.type) and\
+                   len(p.mle.tlv.route64.cost) == 32 and\
+                   p.ipv6.hlim == 255
+                  ).\
+            must_next()
+
+        # Step 5: Router_32 to attach to any of the active routers, 2-hops
+        #         from the leader, and to send an Address Solicit Request
+        #         to become an active router.
+
+        _pkt = pkts.filter_wpan_src64(ROUTER_32).\
+            filter_ipv6_dst(LEADER_RLOC).\
+            filter_coap_request(ADDR_SOL_URI).\
+            filter(lambda p: {
+                              NL_MAC_EXTENDED_ADDRESS_TLV,
+                              NL_STATUS_TLV
+                              } == set(p.coap.tlv.type)
+                  ).\
+           must_next()
+
+        # Step 6: Leader sends an Address Solicit Response.
+        #         Ensure the Address Solicit Response is properly formatted:
+        #         CoAP Response Code
+        #             2.04 Changed
+        #         CoAP Payload
+        #             - Status TLV (value = No Address Available)
+
+        pkts.filter_wpan_src64(LEADER).\
+            filter_ipv6_dst(_pkt.ipv6.src).\
+            filter_coap_ack(ADDR_SOL_URI).\
+            filter(lambda p:
+                   p.coap.code == COAP_CODE_ACK and\
+                   p.thread_address.tlv.status == ADDR_SOL_NA
+                   ).\
+            must_next()
+
 
 if __name__ == '__main__':
     unittest.main()

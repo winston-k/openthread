@@ -37,139 +37,170 @@
 #include <openthread/udp.h>
 
 #include "cli/cli.hpp"
-#include "cli/cli_server.hpp"
 #include "common/encoding.hpp"
+#include "utils/parse_cmdline.hpp"
 
-using ot::Encoding::BigEndian::HostSwap16;
+using ot::Utils::CmdLineParser::ParseAsHexString;
+using ot::Utils::CmdLineParser::ParseAsIp6Address;
+using ot::Utils::CmdLineParser::ParseAsUint16;
 
 namespace ot {
 namespace Cli {
 
-const struct UdpExample::Command UdpExample::sCommands[] = {
-    {"help", &UdpExample::ProcessHelp},       {"bind", &UdpExample::ProcessBind}, {"close", &UdpExample::ProcessClose},
-    {"connect", &UdpExample::ProcessConnect}, {"open", &UdpExample::ProcessOpen}, {"send", &UdpExample::ProcessSend}};
+constexpr UdpExample::Command UdpExample::sCommands[];
 
 UdpExample::UdpExample(Interpreter &aInterpreter)
     : mInterpreter(aInterpreter)
+    , mLinkSecurityEnabled(true)
 {
     memset(&mSocket, 0, sizeof(mSocket));
 }
 
-otError UdpExample::ProcessHelp(int argc, char *argv[])
+otError UdpExample::ProcessHelp(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
-    for (unsigned int i = 0; i < OT_ARRAY_LENGTH(sCommands); i++)
+    for (const Command &command : sCommands)
     {
-        mInterpreter.mServer->OutputFormat("%s\r\n", sCommands[i].mName);
+        mInterpreter.OutputLine(command.mName);
     }
 
     return OT_ERROR_NONE;
 }
 
-otError UdpExample::ProcessBind(int argc, char *argv[])
+otError UdpExample::ProcessBind(uint8_t aArgsLength, char *aArgs[])
 {
     otError    error;
     otSockAddr sockaddr;
-    long       value;
 
-    VerifyOrExit(argc == 2, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength == 2, error = OT_ERROR_INVALID_ARGS);
 
-    memset(&sockaddr, 0, sizeof(sockaddr));
+    SuccessOrExit(error = ParseAsIp6Address(aArgs[0], sockaddr.mAddress));
+    SuccessOrExit(error = ParseAsUint16(aArgs[1], sockaddr.mPort));
 
-    error = otIp6AddressFromString(argv[0], &sockaddr.mAddress);
-    SuccessOrExit(error);
-
-    error = Interpreter::ParseLong(argv[1], value);
-    SuccessOrExit(error);
-
-    sockaddr.mPort    = static_cast<uint16_t>(value);
-    sockaddr.mScopeId = OT_NETIF_INTERFACE_ID_THREAD;
-
-    error = otUdpBind(&mSocket, &sockaddr);
+    error = otUdpBind(mInterpreter.mInstance, &mSocket, &sockaddr);
 
 exit:
     return error;
 }
 
-otError UdpExample::ProcessConnect(int argc, char *argv[])
+otError UdpExample::ProcessConnect(uint8_t aArgsLength, char *aArgs[])
 {
     otError    error;
     otSockAddr sockaddr;
-    long       value;
 
-    VerifyOrExit(argc == 2, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength == 2, error = OT_ERROR_INVALID_ARGS);
 
-    memset(&sockaddr, 0, sizeof(sockaddr));
+    SuccessOrExit(error = ParseAsIp6Address(aArgs[0], sockaddr.mAddress));
+    SuccessOrExit(error = ParseAsUint16(aArgs[1], sockaddr.mPort));
 
-    error = otIp6AddressFromString(argv[0], &sockaddr.mAddress);
-    SuccessOrExit(error);
-
-    error = Interpreter::ParseLong(argv[1], value);
-    SuccessOrExit(error);
-
-    sockaddr.mPort    = static_cast<uint16_t>(value);
-    sockaddr.mScopeId = OT_NETIF_INTERFACE_ID_THREAD;
-
-    error = otUdpConnect(&mSocket, &sockaddr);
+    error = otUdpConnect(mInterpreter.mInstance, &mSocket, &sockaddr);
 
 exit:
     return error;
 }
 
-otError UdpExample::ProcessClose(int argc, char *argv[])
+otError UdpExample::ProcessClose(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
-    return otUdpClose(&mSocket);
+    return otUdpClose(mInterpreter.mInstance, &mSocket);
 }
 
-otError UdpExample::ProcessOpen(int argc, char *argv[])
+otError UdpExample::ProcessOpen(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
     return otUdpOpen(mInterpreter.mInstance, &mSocket, HandleUdpReceive, this);
 }
 
-otError UdpExample::ProcessSend(int argc, char *argv[])
+otError UdpExample::ProcessSend(uint8_t aArgsLength, char *aArgs[])
 {
-    otError       error;
-    otMessageInfo messageInfo;
-    otMessage *   message = NULL;
-    int           curArg  = 0;
+    otError           error = OT_ERROR_NONE;
+    otMessageInfo     messageInfo;
+    otMessage *       message         = nullptr;
+    uint8_t           curArg          = 0;
+    uint16_t          payloadLength   = 0;
+    PayloadType       payloadType     = kTypeText;
+    otMessageSettings messageSettings = {mLinkSecurityEnabled, OT_MESSAGE_PRIORITY_NORMAL};
 
     memset(&messageInfo, 0, sizeof(messageInfo));
 
-    VerifyOrExit(argc == 1 || argc == 3, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength >= 1 && aArgsLength <= 4, error = OT_ERROR_INVALID_ARGS);
 
-    if (argc == 3)
+    if (aArgsLength > 2)
     {
-        long value;
-
-        error = otIp6AddressFromString(argv[curArg++], &messageInfo.mPeerAddr);
-        SuccessOrExit(error);
-
-        error = Interpreter::ParseLong(argv[curArg++], value);
-        SuccessOrExit(error);
-
-        messageInfo.mPeerPort    = static_cast<uint16_t>(value);
-        messageInfo.mInterfaceId = OT_NETIF_INTERFACE_ID_THREAD;
+        SuccessOrExit(error = ParseAsIp6Address(aArgs[curArg++], messageInfo.mPeerAddr));
+        SuccessOrExit(error = ParseAsUint16(aArgs[curArg++], messageInfo.mPeerPort));
     }
 
-    message = otUdpNewMessage(mInterpreter.mInstance, NULL);
-    VerifyOrExit(message != NULL, error = OT_ERROR_NO_BUFS);
+    if (aArgsLength == 2 || aArgsLength == 4)
+    {
+        uint8_t typePos = curArg++;
 
-    error = otMessageAppend(message, argv[curArg], static_cast<uint16_t>(strlen(argv[curArg])));
-    SuccessOrExit(error);
+        if (strcmp(aArgs[typePos], "-s") == 0)
+        {
+            payloadType = kTypeAutoSize;
+            SuccessOrExit(error = ParseAsUint16(aArgs[curArg], payloadLength));
+        }
+        else if (strcmp(aArgs[typePos], "-x") == 0)
+        {
+            payloadLength = static_cast<uint16_t>(strlen(aArgs[curArg]));
+            payloadType   = kTypeHexString;
+        }
+        else if (strcmp(aArgs[typePos], "-t") == 0)
+        {
+            payloadType = kTypeText;
+        }
+    }
 
-    error = otUdpSend(&mSocket, message, &messageInfo);
+    message = otUdpNewMessage(mInterpreter.mInstance, &messageSettings);
+    VerifyOrExit(message != nullptr, error = OT_ERROR_NO_BUFS);
+
+    switch (payloadType)
+    {
+    case kTypeText:
+        SuccessOrExit(error = otMessageAppend(message, aArgs[curArg], static_cast<uint16_t>(strlen(aArgs[curArg]))));
+        break;
+    case kTypeAutoSize:
+        SuccessOrExit(error = WriteCharToBuffer(message, payloadLength));
+        break;
+    case kTypeHexString:
+    {
+        uint8_t     buf[50];
+        uint16_t    bufLen;
+        uint16_t    conversionLength = 0;
+        const char *hexString        = aArgs[curArg];
+
+        while (payloadLength > 0)
+        {
+            bufLen = sizeof(buf);
+            SuccessOrExit(error = ParseAsHexString(hexString, bufLen, buf, Utils::CmdLineParser::kAllowTruncate));
+            VerifyOrExit(bufLen > 0, error = OT_ERROR_INVALID_ARGS);
+
+            conversionLength = static_cast<uint16_t>(bufLen * 2);
+
+            if ((payloadLength & 0x01) != 0)
+            {
+                conversionLength -= 1;
+            }
+
+            hexString += conversionLength;
+            payloadLength -= conversionLength;
+            SuccessOrExit(error = otMessageAppend(message, buf, bufLen));
+        }
+        break;
+    }
+    }
+
+    error = otUdpSend(mInterpreter.mInstance, &mSocket, message, &messageInfo);
 
 exit:
 
-    if (error != OT_ERROR_NONE && message != NULL)
+    if (error != OT_ERROR_NONE && message != nullptr)
     {
         otMessageFree(message);
     }
@@ -177,26 +208,71 @@ exit:
     return error;
 }
 
-otError UdpExample::Process(int argc, char *argv[])
+otError UdpExample::ProcessLinkSecurity(uint8_t aArgsLength, char *aArgs[])
 {
-    otError error = OT_ERROR_PARSE;
+    otError error = OT_ERROR_NONE;
 
-    if (argc < 1)
+    if (aArgsLength == 0)
     {
-        ProcessHelp(0, NULL);
-        error = OT_ERROR_INVALID_ARGS;
+        mInterpreter.OutputEnabledDisabledStatus(mLinkSecurityEnabled);
+    }
+    else if (strcmp(aArgs[0], "enable") == 0)
+    {
+        mLinkSecurityEnabled = true;
+    }
+    else if (strcmp(aArgs[0], "disable") == 0)
+    {
+        mLinkSecurityEnabled = false;
     }
     else
     {
-        for (size_t i = 0; i < OT_ARRAY_LENGTH(sCommands); i++)
+        error = OT_ERROR_INVALID_COMMAND;
+    }
+
+    return error;
+}
+
+otError UdpExample::WriteCharToBuffer(otMessage *aMessage, uint16_t aMessageSize)
+{
+    otError error     = OT_ERROR_NONE;
+    uint8_t character = 0x30; // 0
+
+    for (uint16_t index = 0; index < aMessageSize; index++)
+    {
+        SuccessOrExit(error = otMessageAppend(aMessage, &character, 1));
+        character++;
+
+        switch (character)
         {
-            if (strcmp(argv[0], sCommands[i].mName) == 0)
-            {
-                error = (this->*sCommands[i].mCommand)(argc - 1, argv + 1);
-                break;
-            }
+        case 0x3A:            // 9
+            character = 0x41; // A
+            break;
+        case 0x5B:            // Z
+            character = 0x61; // a
+            break;
+        case 0x7B:            // z
+            character = 0x30; // 0
+            break;
         }
     }
+
+exit:
+    return error;
+}
+
+otError UdpExample::Process(uint8_t aArgsLength, char *aArgs[])
+{
+    otError        error = OT_ERROR_INVALID_ARGS;
+    const Command *command;
+
+    VerifyOrExit(aArgsLength != 0, IgnoreError(ProcessHelp(0, nullptr)));
+
+    command = Utils::LookupTable::Find(aArgs[0], sCommands);
+    VerifyOrExit(command != nullptr, error = OT_ERROR_INVALID_COMMAND);
+
+    error = (this->*command->mHandler)(aArgsLength - 1, aArgs + 1);
+
+exit:
     return error;
 }
 
@@ -207,21 +283,17 @@ void UdpExample::HandleUdpReceive(void *aContext, otMessage *aMessage, const otM
 
 void UdpExample::HandleUdpReceive(otMessage *aMessage, const otMessageInfo *aMessageInfo)
 {
-    uint8_t buf[1500];
-    int     length;
+    char buf[1500];
+    int  length;
 
-    mInterpreter.mServer->OutputFormat("%d bytes from ", otMessageGetLength(aMessage) - otMessageGetOffset(aMessage));
-    mInterpreter.mServer->OutputFormat(
-        "%x:%x:%x:%x:%x:%x:%x:%x %d ", HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[0]),
-        HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[1]), HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[2]),
-        HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[3]), HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[4]),
-        HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[5]), HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[6]),
-        HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[7]), aMessageInfo->mPeerPort);
+    mInterpreter.OutputFormat("%d bytes from ", otMessageGetLength(aMessage) - otMessageGetOffset(aMessage));
+    mInterpreter.OutputIp6Address(aMessageInfo->mPeerAddr);
+    mInterpreter.OutputFormat(" %d ", aMessageInfo->mPeerPort);
 
     length      = otMessageRead(aMessage, otMessageGetOffset(aMessage), buf, sizeof(buf) - 1);
     buf[length] = '\0';
 
-    mInterpreter.mServer->OutputFormat("%s\r\n", buf);
+    mInterpreter.OutputLine("%s", buf);
 }
 
 } // namespace Cli

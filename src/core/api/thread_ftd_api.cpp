@@ -31,95 +31,113 @@
  *   This file implements the OpenThread Thread API (FTD only).
  */
 
-#define WPP_NAME "thread_ftd_api.tmh"
-
 #include "openthread-core-config.h"
 
 #if OPENTHREAD_FTD
 
 #include <openthread/thread_ftd.h>
 
+#include "backbone_router/bbr_manager.hpp"
 #include "common/instance.hpp"
-#include "thread/mle_constants.hpp"
+#include "common/locator-getters.hpp"
+#include "thread/mle_types.hpp"
 #include "thread/topology.hpp"
 
 using namespace ot;
 
-uint8_t otThreadGetMaxAllowedChildren(otInstance *aInstance)
+uint16_t otThreadGetMaxAllowedChildren(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().GetChildTable().GetMaxChildrenAllowed();
+    return instance.Get<ChildTable>().GetMaxChildrenAllowed();
 }
 
-otError otThreadSetMaxAllowedChildren(otInstance *aInstance, uint8_t aMaxChildren)
+otError otThreadSetMaxAllowedChildren(otInstance *aInstance, uint16_t aMaxChildren)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().GetChildTable().SetMaxChildrenAllowed(aMaxChildren);
+    return instance.Get<ChildTable>().SetMaxChildrenAllowed(aMaxChildren);
 }
 
-bool otThreadIsRouterRoleEnabled(otInstance *aInstance)
+uint8_t otThreadGetMaxChildIpAddresses(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().IsRouterRoleEnabled();
+    return instance.Get<Mle::MleRouter>().GetMaxChildIpAddresses();
 }
 
-void otThreadSetRouterRoleEnabled(otInstance *aInstance, bool aEnabled)
+#if OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE
+otError otThreadSetMaxChildIpAddresses(otInstance *aInstance, uint8_t aMaxIpAddresses)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    instance.GetThreadNetif().GetMle().SetRouterRoleEnabled(aEnabled);
+    return instance.Get<Mle::MleRouter>().SetMaxChildIpAddresses(aMaxIpAddresses);
+}
+#endif
+
+bool otThreadIsRouterEligible(otInstance *aInstance)
+{
+    Instance &instance = *static_cast<Instance *>(aInstance);
+
+    return instance.Get<Mle::MleRouter>().IsRouterEligible();
+}
+
+otError otThreadSetRouterEligible(otInstance *aInstance, bool aEligible)
+{
+    Instance &instance = *static_cast<Instance *>(aInstance);
+
+    return instance.Get<Mle::MleRouter>().SetRouterEligible(aEligible);
 }
 
 otError otThreadSetPreferredRouterId(otInstance *aInstance, uint8_t aRouterId)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().SetPreferredRouterId(aRouterId);
+    return instance.Get<Mle::MleRouter>().SetPreferredRouterId(aRouterId);
 }
 
 uint8_t otThreadGetLocalLeaderWeight(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().GetLeaderWeight();
+    return instance.Get<Mle::MleRouter>().GetLeaderWeight();
 }
 
 void otThreadSetLocalLeaderWeight(otInstance *aInstance, uint8_t aWeight)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    instance.GetThreadNetif().GetMle().SetLeaderWeight(aWeight);
+    instance.Get<Mle::MleRouter>().SetLeaderWeight(aWeight);
 }
 
-uint32_t otThreadGetLocalLeaderPartitionId(otInstance *aInstance)
+#if OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE
+uint32_t otThreadGetPreferredLeaderPartitionId(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().GetLeaderPartitionId();
+    return instance.Get<Mle::MleRouter>().GetPreferredLeaderPartitionId();
 }
 
-void otThreadSetLocalLeaderPartitionId(otInstance *aInstance, uint32_t aPartitionId)
+void otThreadSetPreferredLeaderPartitionId(otInstance *aInstance, uint32_t aPartitionId)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().SetLeaderPartitionId(aPartitionId);
+    instance.Get<Mle::MleRouter>().SetPreferredLeaderPartitionId(aPartitionId);
 }
+#endif
 
 uint16_t otThreadGetJoinerUdpPort(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetJoinerRouter().GetJoinerUdpPort();
+    return instance.Get<MeshCoP::JoinerRouter>().GetJoinerUdpPort();
 }
 
 otError otThreadSetJoinerUdpPort(otInstance *aInstance, uint16_t aJoinerUdpPort)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    instance.GetThreadNetif().GetJoinerRouter().SetJoinerUdpPort(aJoinerUdpPort);
+    instance.Get<MeshCoP::JoinerRouter>().SetJoinerUdpPort(aJoinerUdpPort);
 
     return OT_ERROR_NONE;
 }
@@ -128,42 +146,42 @@ uint32_t otThreadGetContextIdReuseDelay(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetNetworkDataLeader().GetContextIdReuseDelay();
+    return instance.Get<NetworkData::Leader>().GetContextIdReuseDelay();
 }
 
 void otThreadSetContextIdReuseDelay(otInstance *aInstance, uint32_t aDelay)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    instance.GetThreadNetif().GetNetworkDataLeader().SetContextIdReuseDelay(aDelay);
+    instance.Get<NetworkData::Leader>().SetContextIdReuseDelay(aDelay);
 }
 
 uint8_t otThreadGetNetworkIdTimeout(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().GetNetworkIdTimeout();
+    return instance.Get<Mle::MleRouter>().GetNetworkIdTimeout();
 }
 
 void otThreadSetNetworkIdTimeout(otInstance *aInstance, uint8_t aTimeout)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    instance.GetThreadNetif().GetMle().SetNetworkIdTimeout((uint8_t)aTimeout);
+    instance.Get<Mle::MleRouter>().SetNetworkIdTimeout(aTimeout);
 }
 
 uint8_t otThreadGetRouterUpgradeThreshold(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().GetRouterUpgradeThreshold();
+    return instance.Get<Mle::MleRouter>().GetRouterUpgradeThreshold();
 }
 
 void otThreadSetRouterUpgradeThreshold(otInstance *aInstance, uint8_t aThreshold)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    instance.GetThreadNetif().GetMle().SetRouterUpgradeThreshold(aThreshold);
+    instance.Get<Mle::MleRouter>().SetRouterUpgradeThreshold(aThreshold);
 }
 
 otError otThreadReleaseRouterId(otInstance *aInstance, uint8_t aRouterId)
@@ -173,7 +191,7 @@ otError otThreadReleaseRouterId(otInstance *aInstance, uint8_t aRouterId)
 
     VerifyOrExit(aRouterId <= Mle::kMaxRouterId, error = OT_ERROR_INVALID_ARGS);
 
-    error = instance.GetThreadNetif().GetMle().GetRouterTable().Release(aRouterId);
+    error = instance.Get<RouterTable>().Release(aRouterId);
 
 exit:
     return error;
@@ -184,18 +202,18 @@ otError otThreadBecomeRouter(otInstance *aInstance)
     otError   error    = OT_ERROR_INVALID_STATE;
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    switch (instance.GetThreadNetif().GetMle().GetRole())
+    switch (instance.Get<Mle::MleRouter>().GetRole())
     {
-    case OT_DEVICE_ROLE_DISABLED:
-    case OT_DEVICE_ROLE_DETACHED:
+    case Mle::kRoleDisabled:
+    case Mle::kRoleDetached:
         break;
 
-    case OT_DEVICE_ROLE_CHILD:
-        error = instance.GetThreadNetif().GetMle().BecomeRouter(ThreadStatusTlv::kHaveChildIdRequest);
+    case Mle::kRoleChild:
+        error = instance.Get<Mle::MleRouter>().BecomeRouter(ThreadStatusTlv::kHaveChildIdRequest);
         break;
 
-    case OT_DEVICE_ROLE_ROUTER:
-    case OT_DEVICE_ROLE_LEADER:
+    case Mle::kRoleRouter:
+    case Mle::kRoleLeader:
         error = OT_ERROR_NONE;
         break;
     }
@@ -207,81 +225,79 @@ otError otThreadBecomeLeader(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().BecomeLeader();
+    return instance.Get<Mle::MleRouter>().BecomeLeader();
 }
 
 uint8_t otThreadGetRouterDowngradeThreshold(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().GetRouterDowngradeThreshold();
+    return instance.Get<Mle::MleRouter>().GetRouterDowngradeThreshold();
 }
 
 void otThreadSetRouterDowngradeThreshold(otInstance *aInstance, uint8_t aThreshold)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    instance.GetThreadNetif().GetMle().SetRouterDowngradeThreshold(aThreshold);
+    instance.Get<Mle::MleRouter>().SetRouterDowngradeThreshold(aThreshold);
 }
 
 uint8_t otThreadGetRouterSelectionJitter(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().GetRouterSelectionJitter();
+    return instance.Get<Mle::MleRouter>().GetRouterSelectionJitter();
 }
 
 void otThreadSetRouterSelectionJitter(otInstance *aInstance, uint8_t aRouterJitter)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    instance.GetThreadNetif().GetMle().SetRouterSelectionJitter(aRouterJitter);
+    IgnoreError(instance.Get<Mle::MleRouter>().SetRouterSelectionJitter(aRouterJitter));
 }
 
 otError otThreadGetChildInfoById(otInstance *aInstance, uint16_t aChildId, otChildInfo *aChildInfo)
 {
-    otError   error    = OT_ERROR_NONE;
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    VerifyOrExit(aChildInfo != NULL, error = OT_ERROR_INVALID_ARGS);
+    OT_ASSERT(aChildInfo != nullptr);
 
-    error = instance.GetThreadNetif().GetMle().GetChildInfoById(aChildId, *aChildInfo);
-
-exit:
-    return error;
+    return instance.Get<ChildTable>().GetChildInfoById(aChildId, *static_cast<Child::Info *>(aChildInfo));
 }
 
-otError otThreadGetChildInfoByIndex(otInstance *aInstance, uint8_t aChildIndex, otChildInfo *aChildInfo)
+otError otThreadGetChildInfoByIndex(otInstance *aInstance, uint16_t aChildIndex, otChildInfo *aChildInfo)
 {
-    otError   error    = OT_ERROR_NONE;
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    VerifyOrExit(aChildInfo != NULL, error = OT_ERROR_INVALID_ARGS);
+    OT_ASSERT(aChildInfo != nullptr);
 
-    error = instance.GetThreadNetif().GetMle().GetChildInfoByIndex(aChildIndex, *aChildInfo);
-
-exit:
-    return error;
+    return instance.Get<ChildTable>().GetChildInfoByIndex(aChildIndex, *static_cast<Child::Info *>(aChildInfo));
 }
 
 otError otThreadGetChildNextIp6Address(otInstance *               aInstance,
-                                       uint8_t                    aChildIndex,
+                                       uint16_t                   aChildIndex,
                                        otChildIp6AddressIterator *aIterator,
                                        otIp6Address *             aAddress)
 {
-    otError                   error    = OT_ERROR_NONE;
-    Instance &                instance = *static_cast<Instance *>(aInstance);
-    Child::Ip6AddressIterator iterator;
-    Ip6::Address *            address;
+    otError      error    = OT_ERROR_NONE;
+    Instance &   instance = *static_cast<Instance *>(aInstance);
+    const Child *child;
 
-    VerifyOrExit(aIterator != NULL && aAddress != NULL, error = OT_ERROR_INVALID_ARGS);
+    OT_ASSERT(aIterator != nullptr && aAddress != nullptr);
 
-    address = static_cast<Ip6::Address *>(aAddress);
-    iterator.Set(*aIterator);
+    child = instance.Get<ChildTable>().GetChildAtIndex(aChildIndex);
+    VerifyOrExit(child != nullptr, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(child->IsStateValidOrRestoring(), error = OT_ERROR_INVALID_ARGS);
 
-    SuccessOrExit(error = instance.GetThreadNetif().GetMle().GetChildNextIp6Address(aChildIndex, iterator, *address));
+    {
+        Child::AddressIterator iter(*child, *aIterator);
 
-    *aIterator = iterator.Get();
+        VerifyOrExit(!iter.IsDone(), error = OT_ERROR_NOT_FOUND);
+        *aAddress = *iter.GetAddress();
+
+        iter++;
+        *aIterator = iter.GetAsIndex();
+    }
 
 exit:
     return error;
@@ -291,7 +307,7 @@ uint8_t otThreadGetRouterIdSequence(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().GetRouterTable().GetRouterIdSequence();
+    return instance.Get<RouterTable>().GetRouterIdSequence();
 }
 
 uint8_t otThreadGetMaxRouterId(otInstance *aInstance)
@@ -302,65 +318,48 @@ uint8_t otThreadGetMaxRouterId(otInstance *aInstance)
 
 otError otThreadGetRouterInfo(otInstance *aInstance, uint16_t aRouterId, otRouterInfo *aRouterInfo)
 {
-    otError   error    = OT_ERROR_NONE;
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    VerifyOrExit(aRouterInfo != NULL, error = OT_ERROR_INVALID_ARGS);
+    OT_ASSERT(aRouterInfo != nullptr);
 
-    error = instance.GetThreadNetif().GetMle().GetRouterTable().GetRouterInfo(aRouterId, *aRouterInfo);
-
-exit:
-    return error;
+    return instance.Get<RouterTable>().GetRouterInfo(aRouterId, *static_cast<Router::Info *>(aRouterInfo));
 }
 
-otError otThreadGetEidCacheEntry(otInstance *aInstance, uint8_t aIndex, otEidCacheEntry *aEntry)
+otError otThreadGetNextCacheEntry(otInstance *aInstance, otCacheEntryInfo *aEntryInfo, otCacheEntryIterator *aIterator)
 {
-    otError   error;
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    VerifyOrExit(aEntry != NULL, error = OT_ERROR_INVALID_ARGS);
-    error = instance.GetThreadNetif().GetAddressResolver().GetEntry(aIndex, *aEntry);
+    OT_ASSERT((aIterator != nullptr) && (aEntryInfo != nullptr));
 
-exit:
-    return error;
+    return instance.Get<AddressResolver>().GetNextCacheEntry(*aEntryInfo, *aIterator);
 }
 
-otError otThreadSetSteeringData(otInstance *aInstance, const otExtAddress *aExtAddress)
+#if OPENTHREAD_CONFIG_MLE_STEERING_DATA_SET_OOB_ENABLE
+void otThreadSetSteeringData(otInstance *aInstance, const otExtAddress *aExtAddress)
 {
-    otError error;
-
-#if OPENTHREAD_CONFIG_ENABLE_STEERING_DATA_SET_OOB
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    error = instance.GetThreadNetif().GetMle().SetSteeringData(static_cast<const Mac::ExtAddress *>(aExtAddress));
-#else
-    OT_UNUSED_VARIABLE(aInstance);
-    OT_UNUSED_VARIABLE(aExtAddress);
-
-    error = OT_ERROR_DISABLED_FEATURE;
+    instance.Get<Mle::MleRouter>().SetSteeringData(static_cast<const Mac::ExtAddress *>(aExtAddress));
+}
 #endif
 
-    return error;
-}
-
-const uint8_t *otThreadGetPSKc(otInstance *aInstance)
+const otPskc *otThreadGetPskc(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetKeyManager().GetPSKc();
+    return &instance.Get<KeyManager>().GetPskc();
 }
 
-otError otThreadSetPSKc(otInstance *aInstance, const uint8_t *aPSKc)
+otError otThreadSetPskc(otInstance *aInstance, const otPskc *aPskc)
 {
     otError   error    = OT_ERROR_NONE;
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    VerifyOrExit(instance.GetThreadNetif().GetMle().GetRole() == OT_DEVICE_ROLE_DISABLED,
-                 error = OT_ERROR_INVALID_STATE);
+    VerifyOrExit(instance.Get<Mle::MleRouter>().IsDisabled(), error = OT_ERROR_INVALID_STATE);
 
-    instance.GetThreadNetif().GetKeyManager().SetPSKc(aPSKc);
-    instance.GetThreadNetif().GetActiveDataset().Clear();
-    instance.GetThreadNetif().GetPendingDataset().Clear();
+    instance.Get<KeyManager>().SetPskc(*static_cast<const Pskc *>(aPskc));
+    instance.Get<MeshCoP::ActiveDataset>().Clear();
+    instance.Get<MeshCoP::PendingDataset>().Clear();
 
 exit:
     return error;
@@ -370,28 +369,58 @@ int8_t otThreadGetParentPriority(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().GetAssignParentPriority();
+    return instance.Get<Mle::MleRouter>().GetAssignParentPriority();
 }
 
-otError otThreadSetParentPriority(otInstance *aInstance, const int8_t aParentPriority)
+otError otThreadSetParentPriority(otInstance *aInstance, int8_t aParentPriority)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().SetAssignParentPriority(aParentPriority);
+    return instance.Get<Mle::MleRouter>().SetAssignParentPriority(aParentPriority);
 }
 
-otThreadChildTableCallback otThreadGetChildTableCallback(otInstance *aInstance)
+void otThreadRegisterNeighborTableCallback(otInstance *aInstance, otNeighborTableCallback aCallback)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetThreadNetif().GetMle().GetChildTableChangedCallback();
+    instance.Get<NeighborTable>().RegisterCallback(aCallback);
 }
 
-void otThreadSetChildTableCallback(otInstance *aInstance, otThreadChildTableCallback aCallback)
+void otThreadSetDiscoveryRequestCallback(otInstance *                     aInstance,
+                                         otThreadDiscoveryRequestCallback aCallback,
+                                         void *                           aContext)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    instance.GetThreadNetif().GetMle().SetChildTableChangedCallback(aCallback);
+    instance.Get<Mle::MleRouter>().SetDiscoveryRequestCallback(aCallback, aContext);
 }
+
+#if OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE
+void otThreadSendAddressNotification(otInstance *              aInstance,
+                                     otIp6Address *            aDestination,
+                                     otIp6Address *            aTarget,
+                                     otIp6InterfaceIdentifier *aMlIid)
+{
+    Instance &instance = *static_cast<Instance *>(aInstance);
+
+    instance.Get<AddressResolver>().SendAddressQueryResponse(static_cast<Ip6::Address &>(*aTarget),
+                                                             static_cast<Ip6::InterfaceIdentifier &>(*aMlIid), nullptr,
+                                                             static_cast<Ip6::Address &>(*aDestination));
+}
+
+#if OPENTHREAD_CONFIG_BACKBONE_ROUTER_DUA_NDPROXYING_ENABLE
+otError otThreadSendProactiveBackboneNotification(otInstance *              aInstance,
+                                                  otIp6Address *            aTarget,
+                                                  otIp6InterfaceIdentifier *aMlIid,
+                                                  uint32_t                  aTimeSinceLastTransaction)
+{
+    Instance &instance = *static_cast<Instance *>(aInstance);
+
+    return instance.Get<BackboneRouter::Manager>().SendProactiveBackboneNotification(
+        static_cast<Ip6::Address &>(*aTarget), static_cast<Ip6::InterfaceIdentifier &>(*aMlIid),
+        aTimeSinceLastTransaction);
+}
+#endif
+#endif
 
 #endif // OPENTHREAD_FTD

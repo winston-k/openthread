@@ -5,7 +5,7 @@
  *  Redistribution and use in source and binary forms, with or without
  *  modification, are permitted provided that the following conditions are met:
  *  1. Redistributions of source code must retain the above copyright
- *     noqtice, this list of conditions and the following disclaimer.
+ *     notice, this list of conditions and the following disclaimer.
  *  2. Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
  *     documentation and/or other materials provided with the distribution.
@@ -35,12 +35,14 @@
 #include <openthread-core-config.h>
 
 #include <stdbool.h>
-#include "common/settings.hpp"
 #include "openthread/platform/settings.h"
 
 #include <utils/code_utils.h>
+#include <utils/settings.h>
 
 #include "settings_qorvo.h"
+
+#if !OPENTHREAD_SETTINGS_RAM
 
 /*****************************************************************************
  *                    Public Function Definitions
@@ -53,22 +55,9 @@ void otPlatSettingsInit(otInstance *aInstance)
     qorvoSettingsInit();
 }
 
-otError otPlatSettingsBeginChange(otInstance *aInstance)
+void otPlatSettingsDeinit(otInstance *aInstance)
 {
     OT_UNUSED_VARIABLE(aInstance);
-    return OT_ERROR_NONE;
-}
-
-otError otPlatSettingsCommitChange(otInstance *aInstance)
-{
-    OT_UNUSED_VARIABLE(aInstance);
-    return OT_ERROR_NONE;
-}
-
-otError otPlatSettingsAbandonChange(otInstance *aInstance)
-{
-    OT_UNUSED_VARIABLE(aInstance);
-    return OT_ERROR_NONE;
 }
 
 otError otPlatSettingsGet(otInstance *aInstance, uint16_t aKey, int aIndex, uint8_t *aValue, uint16_t *aValueLength)
@@ -84,7 +73,7 @@ otError otPlatSettingsGet(otInstance *aInstance, uint16_t aKey, int aIndex, uint
 
     if (error == OT_ERROR_NOT_FOUND)
     {
-        if (aValue != NULL)
+        if (aValue != nullptr)
         {
             *aValueLength = 0;
         }
@@ -122,7 +111,7 @@ otError otPlatSettingsDelete(otInstance *aInstance, uint16_t aKey, int aIndex)
     otError error = OT_ERROR_NOT_FOUND;
     OT_UNUSED_VARIABLE(aInstance);
 
-    if (otPlatSettingsGet(aInstance, aKey, 0, NULL, NULL) == OT_ERROR_NONE)
+    if (otPlatSettingsGet(aInstance, aKey, 0, nullptr, nullptr) == OT_ERROR_NONE)
     {
         qorvoSettingsDelete(aKey, aIndex);
         error = OT_ERROR_NONE;
@@ -136,3 +125,5 @@ void otPlatSettingsWipe(otInstance *aInstance)
     qorvoSettingsWipe();
     otPlatSettingsInit(aInstance);
 }
+
+#endif /* OPENTHREAD_SETTINGS_RAM */

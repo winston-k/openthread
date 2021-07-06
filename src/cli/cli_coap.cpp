@@ -33,28 +33,96 @@
 
 #include "cli_coap.hpp"
 
-#if OPENTHREAD_ENABLE_APPLICATION_COAP
+#if OPENTHREAD_CONFIG_COAP_API_ENABLE
+
+#include <openthread/random_noncrypto.h>
 
 #include <ctype.h>
 
 #include "cli/cli.hpp"
-#include "cli/cli_server.hpp"
 #include "coap/coap_message.hpp"
+#include "utils/parse_cmdline.hpp"
+
+using ot::Utils::CmdLineParser::ParseAsIp6Address;
+using ot::Utils::CmdLineParser::ParseAsUint32;
+using ot::Utils::CmdLineParser::ParseAsUint8;
 
 namespace ot {
 namespace Cli {
 
-const struct Coap::Command Coap::sCommands[] = {
-    {"help", &Coap::ProcessHelp},    {"delete", &Coap::ProcessRequest}, {"get", &Coap::ProcessRequest},
-    {"post", &Coap::ProcessRequest}, {"put", &Coap::ProcessRequest},    {"resource", &Coap::ProcessResource},
-    {"start", &Coap::ProcessStart},  {"stop", &Coap::ProcessStop},
-};
+constexpr Coap::Command Coap::sCommands[];
 
 Coap::Coap(Interpreter &aInterpreter)
     : mInterpreter(aInterpreter)
+    , mUseDefaultRequestTxParameters(true)
+    , mUseDefaultResponseTxParameters(true)
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+    , mObserveSerial(0)
+    , mRequestTokenLength(0)
+    , mSubscriberTokenLength(0)
+    , mSubscriberConfirmableNotifications(false)
+#endif
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+    , mBlockCount(1)
+#endif
 {
     memset(&mResource, 0, sizeof(mResource));
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+    memset(&mRequestAddr, 0, sizeof(mRequestAddr));
+    memset(&mSubscriberSock, 0, sizeof(mSubscriberSock));
+    memset(&mRequestToken, 0, sizeof(mRequestToken));
+    memset(&mSubscriberToken, 0, sizeof(mSubscriberToken));
+    memset(&mRequestUri, 0, sizeof(mRequestUri));
+#endif
+    memset(&mUriPath, 0, sizeof(mUriPath));
+    strncpy(mResourceContent, "0", sizeof(mResourceContent));
+    mResourceContent[sizeof(mResourceContent) - 1] = '\0';
 }
+
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+otError Coap::CancelResourceSubscription(void)
+{
+    otError       error   = OT_ERROR_NONE;
+    otMessage *   message = nullptr;
+    otMessageInfo messageInfo;
+
+    memset(&messageInfo, 0, sizeof(messageInfo));
+    messageInfo.mPeerAddr = mRequestAddr;
+    messageInfo.mPeerPort = OT_DEFAULT_COAP_PORT;
+
+    VerifyOrExit(mRequestTokenLength != 0, error = OT_ERROR_INVALID_STATE);
+
+    message = otCoapNewMessage(mInterpreter.mInstance, nullptr);
+    VerifyOrExit(message != nullptr, error = OT_ERROR_NO_BUFS);
+
+    otCoapMessageInit(message, OT_COAP_TYPE_CONFIRMABLE, OT_COAP_CODE_GET);
+
+    SuccessOrExit(error = otCoapMessageSetToken(message, mRequestToken, mRequestTokenLength));
+    SuccessOrExit(error = otCoapMessageAppendObserveOption(message, 1));
+    SuccessOrExit(error = otCoapMessageAppendUriPathOptions(message, mRequestUri));
+    SuccessOrExit(error =
+                      otCoapSendRequest(mInterpreter.mInstance, message, &messageInfo, &Coap::HandleResponse, this));
+
+    memset(&mRequestAddr, 0, sizeof(mRequestAddr));
+    memset(&mRequestUri, 0, sizeof(mRequestUri));
+    mRequestTokenLength = 0;
+
+exit:
+
+    if ((error != OT_ERROR_NONE) && (message != nullptr))
+    {
+        otMessageFree(message);
+    }
+
+    return error;
+}
+
+void Coap::CancelSubscriber(void)
+{
+    memset(&mSubscriberSock, 0, sizeof(mSubscriberSock));
+    mSubscriberTokenLength = 0;
+}
+#endif // OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
 
 void Coap::PrintPayload(otMessage *aMessage) const
 {
@@ -65,7 +133,7 @@ void Coap::PrintPayload(otMessage *aMessage) const
 
     if (length > 0)
     {
-        mInterpreter.mServer->OutputFormat(" with payload: ");
+        mInterpreter.OutputFormat(" with payload: ");
 
         while (length > 0)
         {
@@ -79,68 +147,219 @@ void Coap::PrintPayload(otMessage *aMessage) const
         }
     }
 
-    mInterpreter.mServer->OutputFormat("\r\n");
+    mInterpreter.OutputLine("");
 }
 
-otError Coap::ProcessHelp(int argc, char *argv[])
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+otError Coap::ProcessCancel(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
-    for (size_t i = 0; i < OT_ARRAY_LENGTH(sCommands); i++)
+    return CancelResourceSubscription();
+}
+#endif
+
+otError Coap::ProcessHelp(uint8_t aArgsLength, char *aArgs[])
+{
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
+
+    for (const Command &command : sCommands)
     {
-        mInterpreter.mServer->OutputFormat("%s\r\n", sCommands[i].mName);
+        mInterpreter.OutputLine(command.mName);
     }
 
     return OT_ERROR_NONE;
 }
 
-otError Coap::ProcessResource(int argc, char *argv[])
+otError Coap::ProcessResource(uint8_t aArgsLength, char *aArgs[])
 {
     otError error = OT_ERROR_NONE;
 
-    if (argc > 1)
+    if (aArgsLength > 1)
     {
-        VerifyOrExit(strlen(argv[1]) < kMaxUriLength, error = OT_ERROR_INVALID_ARGS);
+        VerifyOrExit(strlen(aArgs[1]) < kMaxUriLength, error = OT_ERROR_INVALID_ARGS);
 
         mResource.mUriPath = mUriPath;
         mResource.mContext = this;
         mResource.mHandler = &Coap::HandleRequest;
 
-        strlcpy(mUriPath, argv[1], kMaxUriLength);
-        SuccessOrExit(error = otCoapAddResource(mInterpreter.mInstance, &mResource));
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+        mResource.mReceiveHook  = &Coap::BlockwiseReceiveHook;
+        mResource.mTransmitHook = &Coap::BlockwiseTransmitHook;
+
+        if (aArgsLength > 2)
+        {
+            SuccessOrExit(error = ParseAsUint32(aArgs[2], mBlockCount));
+        }
+#endif
+
+        strncpy(mUriPath, aArgs[1], sizeof(mUriPath) - 1);
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+        otCoapAddBlockWiseResource(mInterpreter.mInstance, &mResource);
+#else
+        otCoapAddResource(mInterpreter.mInstance, &mResource);
+#endif
     }
     else
     {
-        mInterpreter.mServer->OutputFormat("%s\r\n", mResource.mUriPath);
+        mInterpreter.OutputLine("%s", mResource.mUriPath != nullptr ? mResource.mUriPath : "");
     }
 
 exit:
-    return OT_ERROR_NONE;
+    return error;
 }
 
-otError Coap::ProcessStart(int argc, char *argv[])
+otError Coap::ProcessSet(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+    otMessage *   notificationMessage = nullptr;
+    otMessageInfo messageInfo;
+#endif
+    otError error = OT_ERROR_NONE;
+
+    if (aArgsLength > 1)
+    {
+        VerifyOrExit(strlen(aArgs[1]) < sizeof(mResourceContent), error = OT_ERROR_INVALID_ARGS);
+        strncpy(mResourceContent, aArgs[1], sizeof(mResourceContent));
+        mResourceContent[sizeof(mResourceContent) - 1] = '\0';
+
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+        if (mSubscriberTokenLength > 0)
+        {
+            // Notify the subscriber
+            memset(&messageInfo, 0, sizeof(messageInfo));
+            messageInfo.mPeerAddr = mSubscriberSock.mAddress;
+            messageInfo.mPeerPort = mSubscriberSock.mPort;
+
+            mInterpreter.OutputFormat("sending coap notification to ");
+            mInterpreter.OutputIp6Address(mSubscriberSock.mAddress);
+            mInterpreter.OutputLine("");
+
+            notificationMessage = otCoapNewMessage(mInterpreter.mInstance, nullptr);
+            VerifyOrExit(notificationMessage != nullptr, error = OT_ERROR_NO_BUFS);
+
+            otCoapMessageInit(
+                notificationMessage,
+                ((mSubscriberConfirmableNotifications) ? OT_COAP_TYPE_CONFIRMABLE : OT_COAP_TYPE_NON_CONFIRMABLE),
+                OT_COAP_CODE_CONTENT);
+
+            SuccessOrExit(error = otCoapMessageSetToken(notificationMessage, mSubscriberToken, mSubscriberTokenLength));
+            SuccessOrExit(error = otCoapMessageAppendObserveOption(notificationMessage, mObserveSerial++));
+            SuccessOrExit(error = otCoapMessageSetPayloadMarker(notificationMessage));
+            SuccessOrExit(error = otMessageAppend(notificationMessage, mResourceContent,
+                                                  static_cast<uint16_t>(strlen(mResourceContent))));
+
+            SuccessOrExit(error = otCoapSendRequest(mInterpreter.mInstance, notificationMessage, &messageInfo,
+                                                    &Coap::HandleNotificationResponse, this));
+        }
+#endif // OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+    }
+    else
+    {
+        mInterpreter.OutputLine("%s", mResourceContent);
+    }
+
+exit:
+
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+    if ((error != OT_ERROR_NONE) && (notificationMessage != nullptr))
+    {
+        otMessageFree(notificationMessage);
+    }
+#endif
+
+    return error;
+}
+
+otError Coap::ProcessStart(uint8_t aArgsLength, char *aArgs[])
+{
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
     return otCoapStart(mInterpreter.mInstance, OT_DEFAULT_COAP_PORT);
 }
 
-otError Coap::ProcessStop(int argc, char *argv[])
+otError Coap::ProcessStop(uint8_t aArgsLength, char *aArgs[])
 {
-    OT_UNUSED_VARIABLE(argc);
-    OT_UNUSED_VARIABLE(argv);
+    OT_UNUSED_VARIABLE(aArgsLength);
+    OT_UNUSED_VARIABLE(aArgs);
 
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+    otCoapRemoveBlockWiseResource(mInterpreter.mInstance, &mResource);
+#else
     otCoapRemoveResource(mInterpreter.mInstance, &mResource);
+#endif
 
     return otCoapStop(mInterpreter.mInstance);
 }
 
-otError Coap::ProcessRequest(int argc, char *argv[])
+otError Coap::ProcessParameters(uint8_t aArgsLength, char *aArgs[])
+{
+    otError             error = OT_ERROR_NONE;
+    bool *              defaultTxParameters;
+    otCoapTxParameters *txParameters;
+
+    VerifyOrExit(aArgsLength > 1, error = OT_ERROR_INVALID_ARGS);
+
+    if (strcmp(aArgs[1], "request") == 0)
+    {
+        txParameters        = &mRequestTxParameters;
+        defaultTxParameters = &mUseDefaultRequestTxParameters;
+    }
+    else if (strcmp(aArgs[1], "response") == 0)
+    {
+        txParameters        = &mResponseTxParameters;
+        defaultTxParameters = &mUseDefaultResponseTxParameters;
+    }
+    else
+    {
+        ExitNow(error = OT_ERROR_INVALID_ARGS);
+    }
+
+    if (aArgsLength > 2)
+    {
+        if (strcmp(aArgs[2], "default") == 0)
+        {
+            *defaultTxParameters = true;
+        }
+        else
+        {
+            VerifyOrExit(aArgsLength >= 6, error = OT_ERROR_INVALID_ARGS);
+
+            SuccessOrExit(error = ParseAsUint32(aArgs[2], txParameters->mAckTimeout));
+            SuccessOrExit(error = ParseAsUint8(aArgs[3], txParameters->mAckRandomFactorNumerator));
+            SuccessOrExit(error = ParseAsUint8(aArgs[4], txParameters->mAckRandomFactorDenominator));
+            SuccessOrExit(error = ParseAsUint8(aArgs[5], txParameters->mMaxRetransmit));
+
+            VerifyOrExit(txParameters->mAckRandomFactorNumerator > txParameters->mAckRandomFactorDenominator,
+                         error = OT_ERROR_INVALID_ARGS);
+
+            *defaultTxParameters = false;
+        }
+    }
+
+    mInterpreter.OutputLine("Transmission parameters for %s:", aArgs[1]);
+    if (*defaultTxParameters)
+    {
+        mInterpreter.OutputLine("default");
+    }
+    else
+    {
+        mInterpreter.OutputLine("ACK_TIMEOUT=%u ms, ACK_RANDOM_FACTOR=%u/%u, MAX_RETRANSMIT=%u",
+                                txParameters->mAckTimeout, txParameters->mAckRandomFactorNumerator,
+                                txParameters->mAckRandomFactorDenominator, txParameters->mMaxRetransmit);
+    }
+
+exit:
+    return error;
+}
+
+otError Coap::ProcessRequest(uint8_t aArgsLength, char *aArgs[])
 {
     otError       error   = OT_ERROR_NONE;
-    otMessage *   message = NULL;
+    otMessage *   message = nullptr;
     otMessageInfo messageInfo;
     uint16_t      payloadLength = 0;
 
@@ -149,23 +368,48 @@ otError Coap::ProcessRequest(int argc, char *argv[])
     otCoapType   coapType               = OT_COAP_TYPE_NON_CONFIRMABLE;
     otCoapCode   coapCode               = OT_COAP_CODE_GET;
     otIp6Address coapDestinationIp;
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+    bool coapObserve = false;
+#endif
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+    bool                         coapBlock     = false;
+    otCoapBlockSzx               coapBlockSize = OT_COAP_OPTION_BLOCK_SZX_16;
+    ot::Coap::Message::BlockType coapBlockType = ot::Coap::Message::kBlockType1;
+#endif
 
-    VerifyOrExit(argc > 0, error = OT_ERROR_INVALID_ARGS);
+    VerifyOrExit(aArgsLength > 0, error = OT_ERROR_INVALID_ARGS);
 
     // CoAP-Code
-    if (strcmp(argv[0], "get") == 0)
+    if (strcmp(aArgs[0], "get") == 0)
     {
         coapCode = OT_COAP_CODE_GET;
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+        coapBlockType = ot::Coap::Message::kBlockType2;
+#endif
     }
-    else if (strcmp(argv[0], "post") == 0)
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+    else if (strcmp(aArgs[0], "observe") == 0)
+    {
+        // Observe request.  This is a GET with Observe=0
+        coapCode    = OT_COAP_CODE_GET;
+        coapObserve = true;
+    }
+#endif
+    else if (strcmp(aArgs[0], "post") == 0)
     {
         coapCode = OT_COAP_CODE_POST;
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+        coapBlockType = ot::Coap::Message::kBlockType1;
+#endif
     }
-    else if (strcmp(argv[0], "put") == 0)
+    else if (strcmp(aArgs[0], "put") == 0)
     {
         coapCode = OT_COAP_CODE_PUT;
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+        coapBlockType = ot::Coap::Message::kBlockType1;
+#endif
     }
-    else if (strcmp(argv[0], "delete") == 0)
+    else if (strcmp(aArgs[0], "delete") == 0)
     {
         coapCode = OT_COAP_CODE_DELETE;
     }
@@ -175,9 +419,9 @@ otError Coap::ProcessRequest(int argc, char *argv[])
     }
 
     // Destination IPv6 address
-    if (argc > 1)
+    if (aArgsLength > 1)
     {
-        SuccessOrExit(error = otIp6AddressFromString(argv[1], &coapDestinationIp));
+        SuccessOrExit(error = ParseAsIp6Address(aArgs[1], coapDestinationIp));
     }
     else
     {
@@ -185,10 +429,10 @@ otError Coap::ProcessRequest(int argc, char *argv[])
     }
 
     // CoAP-URI
-    if (argc > 2)
+    if (aArgsLength > 2)
     {
-        VerifyOrExit(strlen(argv[2]) < kMaxUriLength, error = OT_ERROR_INVALID_ARGS);
-        strlcpy(coapUri, argv[2], kMaxUriLength);
+        VerifyOrExit(strlen(aArgs[2]) < kMaxUriLength, error = OT_ERROR_INVALID_ARGS);
+        strncpy(coapUri, aArgs[2], sizeof(coapUri) - 1);
     }
     else
     {
@@ -196,54 +440,169 @@ otError Coap::ProcessRequest(int argc, char *argv[])
     }
 
     // CoAP-Type
-    if (argc > 3)
+    if (aArgsLength > 3)
     {
-        if (strcmp(argv[3], "con") == 0)
+        if (strcmp(aArgs[3], "con") == 0)
         {
             coapType = OT_COAP_TYPE_CONFIRMABLE;
         }
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+        else if (strcmp(aArgs[3], "block-16") == 0)
+        {
+            coapType      = OT_COAP_TYPE_CONFIRMABLE;
+            coapBlock     = true;
+            coapBlockSize = OT_COAP_OPTION_BLOCK_SZX_16;
+        }
+        else if (strcmp(aArgs[3], "block-32") == 0)
+        {
+            coapType      = OT_COAP_TYPE_CONFIRMABLE;
+            coapBlock     = true;
+            coapBlockSize = OT_COAP_OPTION_BLOCK_SZX_32;
+        }
+        else if (strcmp(aArgs[3], "block-64") == 0)
+        {
+            coapType      = OT_COAP_TYPE_CONFIRMABLE;
+            coapBlock     = true;
+            coapBlockSize = OT_COAP_OPTION_BLOCK_SZX_64;
+        }
+        else if (strcmp(aArgs[3], "block-128") == 0)
+        {
+            coapType      = OT_COAP_TYPE_CONFIRMABLE;
+            coapBlock     = true;
+            coapBlockSize = OT_COAP_OPTION_BLOCK_SZX_128;
+        }
+        else if (strcmp(aArgs[3], "block-256") == 0)
+        {
+            coapType      = OT_COAP_TYPE_CONFIRMABLE;
+            coapBlock     = true;
+            coapBlockSize = OT_COAP_OPTION_BLOCK_SZX_256;
+        }
+        else if (strcmp(aArgs[3], "block-512") == 0)
+        {
+            coapType      = OT_COAP_TYPE_CONFIRMABLE;
+            coapBlock     = true;
+            coapBlockSize = OT_COAP_OPTION_BLOCK_SZX_512;
+        }
+        else if (strcmp(aArgs[3], "block-1024") == 0)
+        {
+            coapType      = OT_COAP_TYPE_CONFIRMABLE;
+            coapBlock     = true;
+            coapBlockSize = OT_COAP_OPTION_BLOCK_SZX_1024;
+        }
+#endif // OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
     }
 
-    message = otCoapNewMessage(mInterpreter.mInstance, NULL);
-    VerifyOrExit(message != NULL, error = OT_ERROR_NO_BUFS);
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+    if (coapObserve && mRequestTokenLength)
+    {
+        // New observe request, cancel any existing observation
+        SuccessOrExit(error = CancelResourceSubscription());
+    }
+#endif
+
+    message = otCoapNewMessage(mInterpreter.mInstance, nullptr);
+    VerifyOrExit(message != nullptr, error = OT_ERROR_NO_BUFS);
 
     otCoapMessageInit(message, coapType, coapCode);
-    otCoapMessageGenerateToken(message, ot::Coap::Message::kDefaultTokenLength);
+    otCoapMessageGenerateToken(message, OT_COAP_DEFAULT_TOKEN_LENGTH);
+
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+    if (coapObserve)
+    {
+        SuccessOrExit(error = otCoapMessageAppendObserveOption(message, 0));
+    }
+#endif
+
     SuccessOrExit(error = otCoapMessageAppendUriPathOptions(message, coapUri));
 
-    if (argc > 4)
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+    if (coapBlock)
     {
-        payloadLength = static_cast<uint16_t>(strlen(argv[4]));
-
-        if (payloadLength > 0)
+        if (coapBlockType == ot::Coap::Message::kBlockType1)
         {
-            otCoapMessageSetPayloadMarker(message);
+            SuccessOrExit(error = otCoapMessageAppendBlock1Option(message, 0, true, coapBlockSize));
         }
+        else
+        {
+            SuccessOrExit(error = otCoapMessageAppendBlock2Option(message, 0, false, coapBlockSize));
+        }
+    }
+#endif
+
+    if (aArgsLength > 4)
+    {
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+        if (coapBlock)
+        {
+            SuccessOrExit(error = ParseAsUint32(aArgs[4], mBlockCount));
+        }
+        else
+        {
+#endif
+            payloadLength = static_cast<uint16_t>(strlen(aArgs[4]));
+
+            if (payloadLength > 0)
+            {
+                SuccessOrExit(error = otCoapMessageSetPayloadMarker(message));
+            }
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+        }
+#endif
     }
 
     // Embed content into message if given
     if (payloadLength > 0)
     {
-        SuccessOrExit(error = otMessageAppend(message, argv[4], payloadLength));
+        SuccessOrExit(error = otMessageAppend(message, aArgs[4], payloadLength));
     }
 
     memset(&messageInfo, 0, sizeof(messageInfo));
-    messageInfo.mPeerAddr    = coapDestinationIp;
-    messageInfo.mPeerPort    = OT_DEFAULT_COAP_PORT;
-    messageInfo.mInterfaceId = OT_NETIF_INTERFACE_ID_THREAD;
+    messageInfo.mPeerAddr = coapDestinationIp;
+    messageInfo.mPeerPort = OT_DEFAULT_COAP_PORT;
+
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+    if (coapObserve)
+    {
+        // Make a note of the message details for later so we can cancel it later.
+        memcpy(&mRequestAddr, &coapDestinationIp, sizeof(mRequestAddr));
+        mRequestTokenLength = otCoapMessageGetTokenLength(message);
+        memcpy(mRequestToken, otCoapMessageGetToken(message), mRequestTokenLength);
+        strncpy(mRequestUri, coapUri, sizeof(mRequestUri) - 1);
+        mRequestUri[sizeof(mRequestUri) - 1] = '\0'; // Fix gcc-9.2 warning
+    }
+#endif
 
     if ((coapType == OT_COAP_TYPE_CONFIRMABLE) || (coapCode == OT_COAP_CODE_GET))
     {
-        error = otCoapSendRequest(mInterpreter.mInstance, message, &messageInfo, &Coap::HandleResponse, this);
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+        if (coapBlock)
+        {
+            if (coapCode == OT_COAP_CODE_PUT || coapCode == OT_COAP_CODE_POST)
+            {
+                SuccessOrExit(error = otCoapMessageSetPayloadMarker(message));
+            }
+            error = otCoapSendRequestBlockWiseWithParameters(mInterpreter.mInstance, message, &messageInfo,
+                                                             &Coap::HandleResponse, this, GetRequestTxParameters(),
+                                                             Coap::BlockwiseTransmitHook, Coap::BlockwiseReceiveHook);
+        }
+        else
+        {
+#endif
+            error = otCoapSendRequestWithParameters(mInterpreter.mInstance, message, &messageInfo,
+                                                    &Coap::HandleResponse, this, GetRequestTxParameters());
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+        }
+#endif
     }
     else
     {
-        error = otCoapSendRequest(mInterpreter.mInstance, message, &messageInfo, NULL, NULL);
+        error = otCoapSendRequestWithParameters(mInterpreter.mInstance, message, &messageInfo, nullptr, nullptr,
+                                                GetResponseTxParameters());
     }
 
 exit:
 
-    if ((error != OT_ERROR_NONE) && (message != NULL))
+    if ((error != OT_ERROR_NONE) && (message != nullptr))
     {
         otMessageFree(message);
     }
@@ -251,27 +610,19 @@ exit:
     return error;
 }
 
-otError Coap::Process(int argc, char *argv[])
+otError Coap::Process(uint8_t aArgsLength, char *aArgs[])
 {
-    otError error = OT_ERROR_PARSE;
+    otError        error = OT_ERROR_INVALID_ARGS;
+    const Command *command;
 
-    if (argc < 1)
-    {
-        ProcessHelp(0, NULL);
-        error = OT_ERROR_INVALID_ARGS;
-    }
-    else
-    {
-        for (size_t i = 0; i < OT_ARRAY_LENGTH(sCommands); i++)
-        {
-            if (strcmp(argv[0], sCommands[i].mName) == 0)
-            {
-                error = (this->*sCommands[i].mCommand)(argc, argv);
-                break;
-            }
-        }
-    }
+    VerifyOrExit(aArgsLength != 0, IgnoreError(ProcessHelp(0, nullptr)));
 
+    command = Utils::LookupTable::Find(aArgs[0], sCommands);
+    VerifyOrExit(command != nullptr, error = OT_ERROR_INVALID_COMMAND);
+
+    error = (this->*command->mHandler)(aArgsLength, aArgs);
+
+exit:
     return error;
 }
 
@@ -283,37 +634,63 @@ void Coap::HandleRequest(void *aContext, otMessage *aMessage, const otMessageInf
 void Coap::HandleRequest(otMessage *aMessage, const otMessageInfo *aMessageInfo)
 {
     otError    error           = OT_ERROR_NONE;
-    otMessage *responseMessage = NULL;
+    otMessage *responseMessage = nullptr;
     otCoapCode responseCode    = OT_COAP_CODE_EMPTY;
-    char       responseContent = '0';
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+    uint64_t observe        = 0;
+    bool     observePresent = false;
+#endif
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+    uint64_t blockValue   = 0;
+    bool     blockPresent = false;
+#endif
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE || OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+    otCoapOptionIterator iterator;
+#endif
 
-    mInterpreter.mServer->OutputFormat(
-        "coap request from [%x:%x:%x:%x:%x:%x:%x:%x] ", HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[0]),
-        HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[1]), HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[2]),
-        HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[3]), HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[4]),
-        HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[5]), HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[6]),
-        HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[7]));
+    mInterpreter.OutputFormat("coap request from ");
+    mInterpreter.OutputIp6Address(aMessageInfo->mPeerAddr);
+    mInterpreter.OutputFormat(" ");
 
     switch (otCoapMessageGetCode(aMessage))
     {
     case OT_COAP_CODE_GET:
-        mInterpreter.mServer->OutputFormat("GET");
+        mInterpreter.OutputFormat("GET");
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE || OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+        SuccessOrExit(error = otCoapOptionIteratorInit(&iterator, aMessage));
+#endif
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+        if (otCoapOptionIteratorGetFirstOptionMatching(&iterator, OT_COAP_OPTION_OBSERVE) != NULL)
+        {
+            SuccessOrExit(error = otCoapOptionIteratorGetOptionUintValue(&iterator, &observe));
+            observePresent = true;
+
+            mInterpreter.OutputFormat(" OBS=%lu", static_cast<uint32_t>(observe));
+        }
+#endif
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+        if (otCoapOptionIteratorGetFirstOptionMatching(&iterator, OT_COAP_OPTION_BLOCK2) != nullptr)
+        {
+            SuccessOrExit(error = otCoapOptionIteratorGetOptionUintValue(&iterator, &blockValue));
+            blockPresent = true;
+        }
+#endif
         break;
 
     case OT_COAP_CODE_DELETE:
-        mInterpreter.mServer->OutputFormat("DELETE");
+        mInterpreter.OutputFormat("DELETE");
         break;
 
     case OT_COAP_CODE_PUT:
-        mInterpreter.mServer->OutputFormat("PUT");
+        mInterpreter.OutputFormat("PUT");
         break;
 
     case OT_COAP_CODE_POST:
-        mInterpreter.mServer->OutputFormat("POST");
+        mInterpreter.OutputFormat("POST");
         break;
 
     default:
-        mInterpreter.mServer->OutputFormat("Undefined\r\n");
+        mInterpreter.OutputLine("Undefined");
         ExitNow(error = OT_ERROR_PARSE);
     }
 
@@ -322,47 +699,155 @@ void Coap::HandleRequest(otMessage *aMessage, const otMessageInfo *aMessageInfo)
     if (otCoapMessageGetType(aMessage) == OT_COAP_TYPE_CONFIRMABLE ||
         otCoapMessageGetCode(aMessage) == OT_COAP_CODE_GET)
     {
-        if (otCoapMessageGetCode(aMessage) == OT_COAP_CODE_GET)
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+        if (observePresent && (mSubscriberTokenLength > 0) && (observe == 0))
+        {
+            // There is already a subscriber
+            responseCode = OT_COAP_CODE_SERVICE_UNAVAILABLE;
+        }
+        else
+#endif
+            if (otCoapMessageGetCode(aMessage) == OT_COAP_CODE_GET)
         {
             responseCode = OT_COAP_CODE_CONTENT;
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+            if (observePresent)
+            {
+                if (observe == 0)
+                {
+                    // New subscriber
+                    mInterpreter.OutputLine("Subscribing client");
+                    mSubscriberSock.mAddress = aMessageInfo->mPeerAddr;
+                    mSubscriberSock.mPort    = aMessageInfo->mPeerPort;
+                    mSubscriberTokenLength   = otCoapMessageGetTokenLength(aMessage);
+                    memcpy(mSubscriberToken, otCoapMessageGetToken(aMessage), mSubscriberTokenLength);
+
+                    /*
+                     * Implementer note.
+                     *
+                     * Here, we try to match a confirmable GET request with confirmable
+                     * notifications, however this is not a requirement of RFC7641:
+                     * the server can send notifications of either type regardless of
+                     * what the client used to subscribe initially.
+                     */
+                    mSubscriberConfirmableNotifications = (otCoapMessageGetType(aMessage) == OT_COAP_TYPE_CONFIRMABLE);
+                }
+                else if (observe == 1)
+                {
+                    // See if it matches our subscriber token
+                    if ((otCoapMessageGetTokenLength(aMessage) == mSubscriberTokenLength) &&
+                        (memcmp(otCoapMessageGetToken(aMessage), mSubscriberToken, mSubscriberTokenLength) == 0))
+                    {
+                        // Unsubscribe request
+                        CancelSubscriber();
+                    }
+                }
+            }
+#endif // OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
         }
         else
         {
             responseCode = OT_COAP_CODE_VALID;
         }
 
-        responseMessage = otCoapNewMessage(mInterpreter.mInstance, NULL);
-        VerifyOrExit(responseMessage != NULL, error = OT_ERROR_NO_BUFS);
+        responseMessage = otCoapNewMessage(mInterpreter.mInstance, nullptr);
+        VerifyOrExit(responseMessage != nullptr, error = OT_ERROR_NO_BUFS);
 
-        otCoapMessageInit(responseMessage, OT_COAP_TYPE_ACKNOWLEDGMENT, responseCode);
-        otCoapMessageSetMessageId(responseMessage, otCoapMessageGetMessageId(aMessage));
-        otCoapMessageSetToken(responseMessage, otCoapMessageGetToken(aMessage), otCoapMessageGetTokenLength(aMessage));
+        SuccessOrExit(
+            error = otCoapMessageInitResponse(responseMessage, aMessage, OT_COAP_TYPE_ACKNOWLEDGMENT, responseCode));
 
-        if (otCoapMessageGetCode(aMessage) == OT_COAP_CODE_GET)
+        if (responseCode == OT_COAP_CODE_CONTENT)
         {
-            otCoapMessageSetPayloadMarker(responseMessage);
-            SuccessOrExit(error = otMessageAppend(responseMessage, &responseContent, sizeof(responseContent)));
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+            if (observePresent && (observe == 0))
+            {
+                SuccessOrExit(error = otCoapMessageAppendObserveOption(responseMessage, mObserveSerial++));
+            }
+#endif
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+            if (blockPresent)
+            {
+                SuccessOrExit(error = otCoapMessageAppendBlock2Option(responseMessage,
+                                                                      static_cast<uint32_t>(blockValue >> 4), true,
+                                                                      static_cast<otCoapBlockSzx>(blockValue & 0x7)));
+                SuccessOrExit(error = otCoapMessageSetPayloadMarker(responseMessage));
+            }
+            else
+            {
+#endif
+                SuccessOrExit(error = otCoapMessageSetPayloadMarker(responseMessage));
+                SuccessOrExit(error = otMessageAppend(responseMessage, mResourceContent,
+                                                      static_cast<uint16_t>(strlen(mResourceContent))));
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+            }
+#endif
         }
 
-        SuccessOrExit(error = otCoapSendResponse(mInterpreter.mInstance, responseMessage, aMessageInfo));
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+        if (blockPresent)
+        {
+            SuccessOrExit(error = otCoapSendResponseBlockWiseWithParameters(mInterpreter.mInstance, responseMessage,
+                                                                            aMessageInfo, GetResponseTxParameters(),
+                                                                            this, mResource.mTransmitHook));
+        }
+        else
+        {
+#endif
+            SuccessOrExit(error = otCoapSendResponseWithParameters(mInterpreter.mInstance, responseMessage,
+                                                                   aMessageInfo, GetResponseTxParameters()));
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+        }
+#endif
     }
 
 exit:
 
     if (error != OT_ERROR_NONE)
     {
-        if (responseMessage != NULL)
+        if (responseMessage != nullptr)
         {
-            mInterpreter.mServer->OutputFormat("coap send response error %d: %s\r\n", error,
-                                               otThreadErrorToString(error));
+            mInterpreter.OutputLine("coap send response error %d: %s", error, otThreadErrorToString(error));
             otMessageFree(responseMessage);
         }
     }
     else if (responseCode >= OT_COAP_CODE_RESPONSE_MIN)
     {
-        mInterpreter.mServer->OutputFormat("coap response sent\r\n");
+        mInterpreter.OutputLine("coap response sent");
     }
 }
+
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+void Coap::HandleNotificationResponse(void *               aContext,
+                                      otMessage *          aMessage,
+                                      const otMessageInfo *aMessageInfo,
+                                      otError              aError)
+{
+    static_cast<Coap *>(aContext)->HandleNotificationResponse(aMessage, aMessageInfo, aError);
+}
+
+void Coap::HandleNotificationResponse(otMessage *aMessage, const otMessageInfo *aMessageInfo, otError aError)
+{
+    OT_UNUSED_VARIABLE(aMessage);
+
+    switch (aError)
+    {
+    case OT_ERROR_NONE:
+        if (aMessageInfo != nullptr)
+        {
+            mInterpreter.OutputFormat("Received ACK in reply to notification from ");
+            mInterpreter.OutputIp6Address(aMessageInfo->mPeerAddr);
+            mInterpreter.OutputLine("");
+        }
+        break;
+
+    default:
+        mInterpreter.OutputLine("coap receive notification response error %d: %s", aError,
+                                otThreadErrorToString(aError));
+        CancelSubscriber();
+        break;
+    }
+}
+#endif // OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
 
 void Coap::HandleResponse(void *aContext, otMessage *aMessage, const otMessageInfo *aMessageInfo, otError aError)
 {
@@ -373,23 +858,111 @@ void Coap::HandleResponse(otMessage *aMessage, const otMessageInfo *aMessageInfo
 {
     if (aError != OT_ERROR_NONE)
     {
-        mInterpreter.mServer->OutputFormat("coap receive response error %d: %s\r\n", aError,
-                                           otThreadErrorToString(aError));
+        mInterpreter.OutputLine("coap receive response error %d: %s", aError, otThreadErrorToString(aError));
     }
-    else
+    else if ((aMessageInfo != nullptr) && (aMessage != nullptr))
     {
-        mInterpreter.mServer->OutputFormat(
-            "coap response from [%x:%x:%x:%x:%x:%x:%x:%x]", HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[0]),
-            HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[1]), HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[2]),
-            HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[3]), HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[4]),
-            HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[5]), HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[6]),
-            HostSwap16(aMessageInfo->mPeerAddr.mFields.m16[7]));
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+        otCoapOptionIterator iterator;
+#endif
 
+        mInterpreter.OutputFormat("coap response from ");
+        mInterpreter.OutputIp6Address(aMessageInfo->mPeerAddr);
+
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+        if (otCoapOptionIteratorInit(&iterator, aMessage) == OT_ERROR_NONE)
+        {
+            const otCoapOption *observeOpt =
+                otCoapOptionIteratorGetFirstOptionMatching(&iterator, OT_COAP_OPTION_OBSERVE);
+
+            if (observeOpt != nullptr)
+            {
+                uint64_t observeVal = 0;
+                otError  error      = otCoapOptionIteratorGetOptionUintValue(&iterator, &observeVal);
+
+                if (error == OT_ERROR_NONE)
+                {
+                    mInterpreter.OutputFormat(" OBS=%u", observeVal);
+                }
+            }
+        }
+#endif
         PrintPayload(aMessage);
     }
 }
 
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+otError Coap::BlockwiseReceiveHook(void *         aContext,
+                                   const uint8_t *aBlock,
+                                   uint32_t       aPosition,
+                                   uint16_t       aBlockLength,
+                                   bool           aMore,
+                                   uint32_t       aTotalLength)
+{
+    return static_cast<Coap *>(aContext)->BlockwiseReceiveHook(aBlock, aPosition, aBlockLength, aMore, aTotalLength);
+}
+
+otError Coap::BlockwiseReceiveHook(const uint8_t *aBlock,
+                                   uint32_t       aPosition,
+                                   uint16_t       aBlockLength,
+                                   bool           aMore,
+                                   uint32_t       aTotalLength)
+{
+    OT_UNUSED_VARIABLE(aMore);
+    OT_UNUSED_VARIABLE(aTotalLength);
+
+    mInterpreter.OutputLine("received block: Num %i Len %i", aPosition / aBlockLength, aBlockLength);
+
+    for (uint16_t i = 0; i < aBlockLength / 16; i++)
+    {
+        mInterpreter.OutputBytes(&aBlock[i * 16], 16);
+        mInterpreter.OutputLine("");
+    }
+
+    return OT_ERROR_NONE;
+}
+
+otError Coap::BlockwiseTransmitHook(void *    aContext,
+                                    uint8_t * aBlock,
+                                    uint32_t  aPosition,
+                                    uint16_t *aBlockLength,
+                                    bool *    aMore)
+{
+    return static_cast<Coap *>(aContext)->BlockwiseTransmitHook(aBlock, aPosition, aBlockLength, aMore);
+}
+
+otError Coap::BlockwiseTransmitHook(uint8_t *aBlock, uint32_t aPosition, uint16_t *aBlockLength, bool *aMore)
+{
+    static uint32_t blockCount = 0;
+    OT_UNUSED_VARIABLE(aPosition);
+
+    // Send a random payload
+    otRandomNonCryptoFillBuffer(aBlock, *aBlockLength);
+
+    mInterpreter.OutputLine("send block: Num %i Len %i", blockCount, *aBlockLength);
+
+    for (uint16_t i = 0; i < *aBlockLength / 16; i++)
+    {
+        mInterpreter.OutputBytes(&aBlock[i * 16], 16);
+        mInterpreter.OutputLine("");
+    }
+
+    if (blockCount == mBlockCount - 1)
+    {
+        blockCount = 0;
+        *aMore     = false;
+    }
+    else
+    {
+        *aMore = true;
+        blockCount++;
+    }
+
+    return OT_ERROR_NONE;
+}
+#endif // OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+
 } // namespace Cli
 } // namespace ot
 
-#endif // OPENTHREAD_ENABLE_APPLICATION_COAP
+#endif // OPENTHREAD_CONFIG_COAP_API_ENABLE

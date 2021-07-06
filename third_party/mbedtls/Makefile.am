@@ -21,7 +21,10 @@ EXTRA_DIST                                    = \
     repo/include                                \
     $(NULL)
 
-lib_LIBRARIES                                 = libmbedcrypto.a
+lib_LIBRARIES                                 = \
+    libmbedcrypto.a                             \
+    libmbedcrypto-radio.a                       \
+    $(NULL)
 
 # Do not enable -Wconversion for mbedtls
 override CFLAGS                              := $(filter-out -Wconversion,$(CFLAGS))
@@ -30,6 +33,10 @@ override CXXFLAGS                            := $(filter-out -Wconversion,$(CXXF
 # Do not enable -pedantic-errors for mbedtls
 override CFLAGS                              := $(filter-out -pedantic-errors,$(CFLAGS))
 override CXXFLAGS                            := $(filter-out -pedantic-errors,$(CXXFLAGS))
+
+# Do not enable -Wcast-align for mbedtls
+override CFLAGS                              := $(filter-out -Wcast-align,$(CFLAGS))
+override CXXFLAGS                            := $(filter-out -Wcast-align,$(CXXFLAGS))
 
 MBEDTLS_SRCDIR                                = $(top_srcdir)/third_party/mbedtls/repo
 
@@ -55,9 +62,11 @@ libmbedcrypto_a_SOURCES                       = \
     repo/library/ecdh.c                         \
     repo/library/ecdsa.c                        \
     repo/library/ecjpake.c                      \
+    repo/library/ecp.c                          \
     repo/library/ecp_curves.c                   \
     repo/library/entropy.c                      \
     repo/library/entropy_poll.c                 \
+    repo/library/hmac_drbg.c                    \
     repo/library/md.c                           \
     repo/library/md_wrap.c                      \
     repo/library/memory_buffer_alloc.c          \
@@ -66,6 +75,7 @@ libmbedcrypto_a_SOURCES                       = \
     repo/library/pk.c                           \
     repo/library/pk_wrap.c                      \
     repo/library/pkparse.c                      \
+    repo/library/pkwrite.c                      \
     repo/library/platform.c                     \
     repo/library/platform_util.c                \
     repo/library/sha256.c                       \
@@ -75,15 +85,22 @@ libmbedcrypto_a_SOURCES                       = \
     repo/library/ssl_srv.c                      \
     repo/library/ssl_ticket.c                   \
     repo/library/ssl_tls.c                      \
+    repo/library/threading.c                    \
     repo/library/x509.c                         \
     repo/library/x509_crt.c                     \
     $(NULL)
 
-if !OPENTHREAD_EXAMPLES_EFR32
-libmbedcrypto_a_SOURCES                      += \
-    repo/library/ecp.c                          \
+libmbedcrypto_radio_a_CPPFLAGS                = \
+    -I$(top_srcdir)/include                     \
+    -I$(top_srcdir)/src/core                    \
+    -I$(MBEDTLS_SRCDIR)/include                 \
+    $(MBEDTLS_CPPFLAGS)                         \
     $(NULL)
-endif
+
+libmbedcrypto_radio_a_SOURCES                 = \
+    repo/library/aes.c                          \
+    repo/library/platform_util.c                \
+    $(NULL)
 
 if OPENTHREAD_BUILD_COVERAGE
 Dash                                          = -

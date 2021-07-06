@@ -38,6 +38,8 @@
 
 #include <openthread/udp.h>
 
+#include "utils/lookup_table.hpp"
+
 namespace ot {
 namespace Cli {
 
@@ -56,37 +58,58 @@ public:
      * @param[in]  aInterpreter  The CLI interpreter.
      *
      */
-    UdpExample(Interpreter &aInterpreter);
+    explicit UdpExample(Interpreter &aInterpreter);
 
     /**
      * This method interprets a list of CLI arguments.
      *
-     * @param[in]  argc  The number of elements in argv.
-     * @param[in]  argv  A pointer to an array of command line arguments.
+     * @param[in]  aArgsLength  The number of elements in @p aArgs.
+     * @param[in]  aArgs        An array of command line arguments.
      *
      */
-    otError Process(int argc, char *argv[]);
+    otError Process(uint8_t aArgsLength, char *aArgs[]);
 
 private:
     struct Command
     {
         const char *mName;
-        otError (UdpExample::*mCommand)(int argc, char *argv[]);
+        otError (UdpExample::*mHandler)(uint8_t aArgsLength, char *aArgs[]);
     };
 
-    otError ProcessHelp(int argc, char *argv[]);
-    otError ProcessBind(int argc, char *argv[]);
-    otError ProcessClose(int argc, char *argv[]);
-    otError ProcessConnect(int argc, char *argv[]);
-    otError ProcessOpen(int argc, char *argv[]);
-    otError ProcessSend(int argc, char *argv[]);
+    enum PayloadType
+    {
+        kTypeText      = 0,
+        kTypeAutoSize  = 1,
+        kTypeHexString = 2,
+    };
+
+    otError ProcessHelp(uint8_t aArgsLength, char *aArgs[]);
+    otError ProcessBind(uint8_t aArgsLength, char *aArgs[]);
+    otError ProcessClose(uint8_t aArgsLength, char *aArgs[]);
+    otError ProcessConnect(uint8_t aArgsLength, char *aArgs[]);
+    otError ProcessOpen(uint8_t aArgsLength, char *aArgs[]);
+    otError ProcessSend(uint8_t aArgsLength, char *aArgs[]);
+    otError ProcessLinkSecurity(uint8_t aArgsLength, char *aArgs[]);
+    otError WriteCharToBuffer(otMessage *aMessage, uint16_t aMessageSize);
 
     static void HandleUdpReceive(void *aContext, otMessage *aMessage, const otMessageInfo *aMessageInfo);
     void        HandleUdpReceive(otMessage *aMessage, const otMessageInfo *aMessageInfo);
 
-    static const Command sCommands[];
-    Interpreter &        mInterpreter;
+    static constexpr Command sCommands[] = {
+        {"bind", &UdpExample::ProcessBind},
+        {"close", &UdpExample::ProcessClose},
+        {"connect", &UdpExample::ProcessConnect},
+        {"help", &UdpExample::ProcessHelp},
+        {"linksecurity", &UdpExample::ProcessLinkSecurity},
+        {"open", &UdpExample::ProcessOpen},
+        {"send", &UdpExample::ProcessSend},
+    };
 
+    static_assert(Utils::LookupTable::IsSorted(sCommands), "Command Table is not sorted");
+
+    Interpreter &mInterpreter;
+
+    bool        mLinkSecurityEnabled;
     otUdpSocket mSocket;
 };
 

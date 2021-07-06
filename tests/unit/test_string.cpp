@@ -83,7 +83,7 @@ void TestString(void)
     VerifyOrQuit(str1.GetLength() == 0, "GetLength() failed for empty string");
     VerifyOrQuit(strcmp(str1.AsCString(), "") == 0, "String content is incorrect");
 
-    str1.Set("%d", 12);
+    IgnoreError(str1.Set("%d", 12));
     VerifyOrQuit(str1.GetLength() == 2, "GetLength() failed");
     VerifyOrQuit(strcmp(str1.AsCString(), "12") == 0, "String content is incorrect");
     PrintString("str1", str1);
@@ -117,13 +117,72 @@ void TestString(void)
     printf(" -- PASS\n");
 }
 
+void TestStringLength(void)
+{
+    char string_a[5] = "\0foo";
+    char string_b[8] = "foo\0bar";
+
+    printf("\nTest 4: String::StringLength() method\n");
+
+    VerifyOrQuit(StringLength(string_a, 0) == 0, "StringLength() 0len 0 fails");
+    VerifyOrQuit(StringLength(string_a, 1) == 0, "StringLength() 0len 1 fails");
+    VerifyOrQuit(StringLength(string_a, 2) == 0, "StringLength() 0len 2 fails");
+
+    VerifyOrQuit(StringLength(string_b, 0) == 0, "StringLength() 3len 0 fails");
+    VerifyOrQuit(StringLength(string_b, 1) == 1, "StringLength() 3len 1 fails");
+    VerifyOrQuit(StringLength(string_b, 2) == 2, "StringLength() 3len 2 fails");
+    VerifyOrQuit(StringLength(string_b, 3) == 3, "StringLength() 3len 3 fails");
+    VerifyOrQuit(StringLength(string_b, 4) == 3, "StringLength() 3len 4 fails");
+    VerifyOrQuit(StringLength(string_b, 5) == 3, "StringLength() 3len 5 fails");
+    VerifyOrQuit(StringLength(string_b, 6) == 3, "StringLength() 3len 6 fails");
+
+    printf(" -- PASS\n");
+}
+
+void TestUtf8(void)
+{
+    printf("\nTest 5: IsValidUtf8String() function\n");
+
+    VerifyOrQuit(IsValidUtf8String("An ASCII string"), "IsValidUtf8String() ASCII string fails");
+    VerifyOrQuit(IsValidUtf8String(u8"Строка UTF-8"), "IsValidUtf8String() UTF-8 string fails");
+    VerifyOrQuit(!IsValidUtf8String("\xbf"), "IsValidUtf8String() illegal string fails");
+    VerifyOrQuit(!IsValidUtf8String("\xdf"), "IsValidUtf8String() illegal string fails");
+    VerifyOrQuit(!IsValidUtf8String("\xef\x80"), "IsValidUtf8String() illegal string fails");
+    VerifyOrQuit(!IsValidUtf8String("\xf7\x80\x80"), "IsValidUtf8String() illegal string fails");
+    VerifyOrQuit(!IsValidUtf8String("\xff"), "IsValidUtf8String() illegal string fails");
+
+    printf(" -- PASS\n");
+}
+
+void TestStringFind(void)
+{
+    char emptyString[1] = {'\0'};
+    char testString[]   = "foo.bar\\.";
+
+    printf("\nTest 6: StringFind() function\n");
+
+    VerifyOrQuit(StringFind(testString, 'f') == testString, "StringFind() failed");
+    VerifyOrQuit(StringFind(testString, 'o') == &testString[1], "StringFind() failed");
+    VerifyOrQuit(StringFind(testString, '.') == &testString[3], "StringFind() failed");
+    VerifyOrQuit(StringFind(testString, 'r') == &testString[6], "StringFind() failed");
+    VerifyOrQuit(StringFind(testString, '\\') == &testString[7], "StringFind() failed");
+    VerifyOrQuit(StringFind(testString, 'x') == nullptr, "StringFind() failed");
+    VerifyOrQuit(StringFind(testString, ',') == nullptr, "StringFind() failed");
+
+    VerifyOrQuit(StringFind(emptyString, 'f') == nullptr, "StringFind() failed");
+    VerifyOrQuit(StringFind(emptyString, '.') == nullptr, "StringFind() failed");
+
+    printf(" -- PASS\n");
+}
+
 } // namespace ot
 
-#ifdef ENABLE_TEST_MAIN
 int main(void)
 {
     ot::TestString();
+    ot::TestStringLength();
+    ot::TestUtf8();
+    ot::TestStringFind();
     printf("\nAll tests passed.\n");
     return 0;
 }
-#endif

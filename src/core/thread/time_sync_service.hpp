@@ -36,11 +36,12 @@
 
 #include "openthread-core-config.h"
 
-#if OPENTHREAD_CONFIG_ENABLE_TIME_SYNC
+#if OPENTHREAD_CONFIG_TIME_SYNC_ENABLE
 #include <openthread/network_time.h>
 
 #include "common/locator.hpp"
 #include "common/message.hpp"
+#include "common/non_copyable.hpp"
 #include "common/notifier.hpp"
 #include "common/timer.hpp"
 
@@ -50,8 +51,10 @@ namespace ot {
  * This class implements OpenThread Time Synchronization Service.
  *
  */
-class TimeSync : public InstanceLocator
+class TimeSync : public InstanceLocator, private NonCopyable
 {
+    friend class ot::Notifier;
+
 public:
     /**
      * This constructor initializes the object.
@@ -96,7 +99,7 @@ public:
      * @returns The time synchronization sequence.
      *
      */
-    uint8_t GetTimeSyncSeq(void) const { return mTimeSyncSeq; };
+    uint8_t GetTimeSyncSeq(void) const { return mTimeSyncSeq; }
 
     /**
      * This method gets the time offset to the Thread network time.
@@ -104,7 +107,7 @@ public:
      * @returns The time offset to the Thread network time, in microseconds.
      *
      */
-    int64_t GetNetworkTimeOffset(void) const { return mNetworkTimeOffset; };
+    int64_t GetNetworkTimeOffset(void) const { return mNetworkTimeOffset; }
 
     /**
      * Set the time synchronization period.
@@ -152,14 +155,6 @@ public:
     }
 
     /**
-     * Callback to be called when thread state changes.
-     *
-     * @param[in] aFlags Flags that denote the state change events.
-     *
-     */
-    void HandleStateChanged(otChangedFlags aFlags);
-
-    /**
      * Callback to be called when timer expires.
      *
      */
@@ -169,11 +164,10 @@ private:
     /**
      * Callback to be called when thread state changes.
      *
-     * @param[in] aCallback Callback context.
      * @param[in] aFlags Flags that denote the state change events.
      *
      */
-    static void HandleStateChanged(Notifier::Callback &aCallback, otChangedFlags aFlags);
+    void HandleNotifierEvents(Events aEvents);
 
     /**
      * Callback to be called when timer expires.
@@ -209,14 +203,13 @@ private:
     uint16_t mTimeSyncPeriod;   ///< The time synchronization period.
     uint16_t mXtalThreshold;    ///< The XTAL accuracy threshold for a device to become a Router, in PPM.
 #if OPENTHREAD_FTD
-    uint32_t mLastTimeSyncSent; ///< The time when the last time synchronization message was sent.
+    TimeMilli mLastTimeSyncSent; ///< The time when the last time synchronization message was sent.
 #endif
-    uint32_t mLastTimeSyncReceived; ///< The time when the last time synchronization message was received.
-    int64_t  mNetworkTimeOffset;    ///< The time offset to the Thread Network time
+    TimeMilli mLastTimeSyncReceived; ///< The time when the last time synchronization message was received.
+    int64_t   mNetworkTimeOffset;    ///< The time offset to the Thread Network time
     otNetworkTimeSyncCallbackFn
                         mTimeSyncCallback; ///< The callback to be called when time sync is handled or status updated.
     void *              mTimeSyncCallbackContext; ///< The context to be passed to callback.
-    Notifier::Callback  mNotifierCallback;        ///< Callback for thread state changes.
     TimerMilli          mTimer;                   ///< Timer for checking if a resync is required.
     otNetworkTimeStatus mCurrentStatus;           ///< Current network time status.
 };
@@ -227,6 +220,6 @@ private:
 
 } // namespace ot
 
-#endif // OPENTHREAD_CONFIG_ENABLE_TIME_SYNC
+#endif // OPENTHREAD_CONFIG_TIME_SYNC_ENABLE
 
 #endif // TIME_SYNC_HPP_

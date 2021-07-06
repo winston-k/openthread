@@ -54,6 +54,9 @@ SOURCES_COMMON                                                        += \
 LDADD_MBEDTLS                                                          = \
     $(NULL)
 
+LDADD_MBEDTLS_RADIO                                                    = \
+    $(NULL)
+
 LDADD_DIAG                                                             = \
     $(NULL)
 
@@ -61,13 +64,11 @@ if OPENTHREAD_ENABLE_BUILTIN_MBEDTLS
 LDADD_MBEDTLS                                                         += \
     $(top_builddir)/third_party/mbedtls/libmbedcrypto.a                  \
     $(NULL)
-endif # OPENTHREAD_ENABLE_BUILTIN_MBEDTLS
 
-if OPENTHREAD_ENABLE_DIAG
-LDADD_DIAG                                                            += \
-    $(top_builddir)/src/diag/libopenthread-diag.a                        \
+LDADD_MBEDTLS_RADIO                                                   += \
+    $(top_builddir)/third_party/mbedtls/libmbedcrypto-radio.a            \
     $(NULL)
-endif
+endif # OPENTHREAD_ENABLE_BUILTIN_MBEDTLS
 
 if OPENTHREAD_ENABLE_NCP_SPINEL_ENCRYPTER
 LDADD_COMMON                                                          += \
@@ -75,10 +76,12 @@ LDADD_COMMON                                                          += \
     $(NULL)
 endif # OPENTHREAD_ENABLE_NCP_SPINEL_ENCRYPTER
 
+if OPENTHREAD_ENABLE_NCP
 if OPENTHREAD_ENABLE_FTD
 bin_PROGRAMS                                                          += \
     ot-ncp-ftd                                                           \
     $(NULL)
+endif
 endif
 
 ot_ncp_ftd_CPPFLAGS                                                    = \
@@ -109,10 +112,12 @@ ot_ncp_ftd_SOURCES                                                     = \
     $(SOURCES_COMMON)                                                    \
     $(NULL)
 
+if OPENTHREAD_ENABLE_NCP
 if OPENTHREAD_ENABLE_MTD
 bin_PROGRAMS                                                          += \
     ot-ncp-mtd                                                           \
     $(NULL)
+endif
 endif
 
 ot_ncp_mtd_CPPFLAGS                                                    = \
@@ -145,38 +150,40 @@ ot_ncp_mtd_SOURCES                                                     = \
 
 if OPENTHREAD_ENABLE_RADIO_ONLY
 bin_PROGRAMS                                                          += \
-    ot-ncp-radio                                                         \
+    ot-rcp                                                               \
     $(NULL)
 endif
 
-ot_ncp_radio_CPPFLAGS                                                  = \
+ot_rcp_CPPFLAGS                                                        = \
     $(CPPFLAGS_COMMON)                                                   \
     $(NULL)
 
-ot_ncp_radio_LDADD                                                     = \
-    $(top_builddir)/src/ncp/libopenthread-ncp-radio.a                    \
+ot_rcp_LDADD                                                           = \
+    $(top_builddir)/src/ncp/libopenthread-rcp.a                          \
     $(top_builddir)/src/core/libopenthread-radio.a                       \
     $(LDADD_COMMON)                                                      \
+    $(LDADD_MBEDTLS_RADIO)                                               \
     $(top_builddir)/src/core/libopenthread-radio.a                       \
     $(LDADD_COMMON)                                                      \
+    $(LDADD_MBEDTLS_RADIO)                                               \
     $(NULL)
 
-ot_ncp_radio_LDFLAGS                                                   = \
+ot_rcp_LDFLAGS                                                         = \
     $(LDFLAGS_COMMON)                                                    \
     $(NULL)
 
-ot_ncp_radio_LIBTOOLFLAGS                                              = \
+ot_rcp_LIBTOOLFLAGS                                                    = \
     $(LIBTOOLFLAGS_COMMON)                                               \
     $(NULL)
 
-ot_ncp_radio_SOURCES                                                   = \
+ot_rcp_SOURCES                                                         = \
     $(SOURCES_COMMON)                                                    \
     $(NULL)
 
 if OPENTHREAD_ENABLE_LINKER_MAP
 ot_ncp_ftd_LDFLAGS                                                    += -Wl,-Map=ot-ncp-ftd.map
 ot_ncp_mtd_LDFLAGS                                                    += -Wl,-Map=ot-ncp-mtd.map
-ot_ncp_radio_LDFLAGS                                                  += -Wl,-Map=ot-ncp-radio.map
+ot_rcp_LDFLAGS                                                        += -Wl,-Map=ot-rcp.map
 endif
 
 if OPENTHREAD_BUILD_COVERAGE

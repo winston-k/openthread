@@ -39,8 +39,10 @@
 #include <openthread/platform/radio.h>
 
 #include "common/locator.hpp"
+#include "common/non_copyable.hpp"
 #include "common/timer.hpp"
 #include "mac/mac.hpp"
+#include "radio/radio.hpp"
 
 namespace ot {
 namespace Utils {
@@ -54,7 +56,7 @@ namespace Utils {
  * @{
  */
 
-#if OPENTHREAD_ENABLE_CHANNEL_MONITOR
+#if OPENTHREAD_CONFIG_CHANNEL_MONITOR_ENABLE
 
 /**
  * This class implements the channel monitoring logic.
@@ -69,7 +71,7 @@ namespace Utils {
  * window (referred to as "channel occupancy").
  *
  */
-class ChannelMonitor : public InstanceLocator
+class ChannelMonitor : public InstanceLocator, private NonCopyable
 {
 public:
     enum
@@ -101,7 +103,7 @@ public:
      * @param[in]  aInstance     A reference to the OpenThread instance.
      *
      */
-    ChannelMonitor(Instance &aInstance);
+    explicit ChannelMonitor(Instance &aInstance);
 
     /**
      * This method starts the Channel Monitoring operation.
@@ -181,13 +183,17 @@ public:
      *             channel with the same occupancy rate value.
      *
      */
-    Mac::ChannelMask FindBestChannels(const Mac::ChannelMask &aMask, uint16_t &aOccupancy);
+    Mac::ChannelMask FindBestChannels(const Mac::ChannelMask &aMask, uint16_t &aOccupancy) const;
 
 private:
     enum
     {
-        kNumChannels       = (OT_RADIO_CHANNEL_MAX - OT_RADIO_CHANNEL_MIN + 1),
-        kNumChannelMasks   = 4,
+#if (OPENTHREAD_CONFIG_RADIO_2P4GHZ_OQPSK_SUPPORT && OPENTHREAD_CONFIG_RADIO_915MHZ_OQPSK_SUPPORT)
+        kNumChannelMasks = 8,
+#else
+        kNumChannelMasks = 4,
+#endif
+        kNumChannels       = (Radio::kChannelMax - Radio::kChannelMin + 1),
         kTimerInterval     = (kSampleInterval / kNumChannelMasks),
         kMaxJitterInterval = 4096,
         kMaxOccupancy      = 0xffff,
@@ -195,19 +201,19 @@ private:
 
     static void HandleTimer(Timer &aTimer);
     void        HandleTimer(void);
-    static void HandleEnergyScanResult(Instance &aInstance, otEnergyScanResult *aResult);
-    void        HandleEnergyScanResult(otEnergyScanResult *aResult);
+    static void HandleEnergyScanResult(Mac::EnergyScanResult *aResult, void *aContext);
+    void        HandleEnergyScanResult(Mac::EnergyScanResult *aResult);
     void        LogResults(void);
 
     static const uint32_t mScanChannelMasks[kNumChannelMasks];
 
-    uint8_t    mChannelMaskIndex : 2;
-    uint32_t   mSampleCount : 30;
+    uint8_t    mChannelMaskIndex : 3;
+    uint32_t   mSampleCount : 29;
     uint16_t   mChannelOccupancy[kNumChannels];
     TimerMilli mTimer;
 };
 
-#endif // OPENTHREAD_ENABLE_CHANNEL_MONITOR
+#endif // OPENTHREAD_CONFIG_CHANNEL_MONITOR_ENABLE
 
 /**
  * @}

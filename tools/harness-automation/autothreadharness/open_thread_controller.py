@@ -27,7 +27,6 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 
-
 import logging
 import re
 import socket
@@ -43,8 +42,10 @@ logger = logging.getLogger(__name__)
 
 linesepx = re.compile(r'\r\n|\n')
 
+
 class OpenThreadController(threading.Thread):
     """This is an simple wrapper to communicate with openthread"""
+
     _lock = threading.Lock()
     viewing = False
 
@@ -223,7 +224,7 @@ class OpenThreadController(threading.Thread):
                         res.append(line)
                 break
 
-            except:
+            except BaseException:
                 logger.exception('Failed to send command')
                 self.close()
                 self._init()
@@ -238,7 +239,7 @@ class OpenThreadController(threading.Thread):
         while self.viewing and self._lock.acquire():
             try:
                 line = self._readline()
-            except:
+            except BaseException:
                 pass
             else:
                 logger.info(line)
@@ -275,7 +276,6 @@ class OpenThreadController(threading.Thread):
         self._read()
         self._log and self.resume()
 
-
     def resume(self):
         """Start dumping logs"""
         self._lock.release()
@@ -283,6 +283,7 @@ class OpenThreadController(threading.Thread):
     def pause(self):
         """Start dumping logs"""
         self._lock.acquire()
+
     @property
     def networkname(self):
         """str: Thread network name."""
@@ -367,19 +368,19 @@ class OpenThreadController(threading.Thread):
         """
         self._req('prefix add %s %s %s' % (prefix, flags, prf))
         time.sleep(1)
-        self._req('netdataregister')
+        self._req('netdata register')
 
     def remove_prefix(self, prefix):
         """Remove network prefix.
         """
         self._req('prefix remove %s' % prefix)
         time.sleep(1)
-        self._req('netdataregister')
+        self._req('netdata register')
 
-    def enable_blacklist(self):
-        """Enable blacklist feature"""
-        self._req('blacklist enable')
+    def enable_denylist(self):
+        """Enable denylist feature"""
+        self._req('denylist enable')
 
-    def add_blacklist(self, mac):
-        """Add a mac address to blacklist"""
-        self._req('blacklist add %s' % mac)
+    def add_denylist(self, mac):
+        """Add a mac address to denylist"""
+        self._req('denylist add %s' % mac)

@@ -31,11 +31,10 @@
  *   This file implements MAC Channel Mask.
  */
 
-#define WPP_NAME "mac-channel-mask.tmh"
-
 #include "channel_mask.hpp"
 
 #include "common/code_utils.hpp"
+#include "common/random.hpp"
 
 namespace ot {
 namespace Mac {
@@ -59,10 +58,10 @@ otError ChannelMask::GetNextChannel(uint8_t &aChannel) const
 
     if (aChannel == kChannelIteratorFirst)
     {
-        aChannel = (OT_RADIO_CHANNEL_MIN - 1);
+        aChannel = (Radio::kChannelMin - 1);
     }
 
-    for (aChannel++; aChannel <= OT_RADIO_CHANNEL_MAX; aChannel++)
+    for (aChannel++; aChannel <= Radio::kChannelMax; aChannel++)
     {
         if (ContainsChannel(aChannel))
         {
@@ -74,6 +73,26 @@ exit:
     return error;
 }
 
+uint8_t ChannelMask::ChooseRandomChannel(void) const
+{
+    uint8_t channel = kChannelIteratorFirst;
+    uint8_t randomIndex;
+
+    VerifyOrExit(!IsEmpty());
+
+    randomIndex = Random::NonCrypto::GetUint8InRange(0, GetNumberOfChannels());
+
+    SuccessOrExit(GetNextChannel(channel));
+
+    while (randomIndex-- != 0)
+    {
+        SuccessOrExit(GetNextChannel(channel));
+    }
+
+exit:
+    return channel;
+}
+
 ChannelMask::InfoString ChannelMask::ToString(void) const
 {
     InfoString string;
@@ -81,7 +100,7 @@ ChannelMask::InfoString ChannelMask::ToString(void) const
     bool       addComma = false;
     otError    error;
 
-    string.Append("{");
+    IgnoreError(string.Append("{"));
 
     error = GetNextChannel(channel);
 
@@ -100,16 +119,16 @@ ChannelMask::InfoString ChannelMask::ToString(void) const
             rangeEnd = channel;
         }
 
-        string.Append("%s%d", addComma ? ", " : " ", rangeStart);
+        IgnoreError(string.Append("%s%d", addComma ? ", " : " ", rangeStart));
         addComma = true;
 
         if (rangeStart < rangeEnd)
         {
-            string.Append("%s%d", rangeEnd == rangeStart + 1 ? ", " : "-", rangeEnd);
+            IgnoreError(string.Append("%s%d", rangeEnd == rangeStart + 1 ? ", " : "-", rangeEnd));
         }
     }
 
-    string.Append("}");
+    IgnoreError(string.Append("}"));
 
     return string;
 }

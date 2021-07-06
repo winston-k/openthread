@@ -39,24 +39,23 @@
 #include <openthread/link_raw.h>
 
 #include "common/locator.hpp"
+#include "common/non_copyable.hpp"
 #include "mac/mac_frame.hpp"
 #include "mac/sub_mac.hpp"
 
 namespace ot {
 namespace Mac {
 
-#if OPENTHREAD_RADIO || OPENTHREAD_ENABLE_RAW_LINK_API
+#if OPENTHREAD_RADIO || OPENTHREAD_CONFIG_LINK_RAW_ENABLE
 
 /**
  * This class defines the raw link-layer object.
  *
  */
-class LinkRaw : public InstanceLocator
-#if OPENTHREAD_RADIO
-    ,
-                public SubMac::Callbacks
-#endif
+class LinkRaw : public InstanceLocator, private NonCopyable
 {
+    friend class ot::Instance;
+
 public:
     /**
      * This constructor initializes the object.
@@ -67,32 +66,26 @@ public:
     explicit LinkRaw(Instance &aInstance);
 
     /**
-     * This method gets the associated `SubMac` object.
-     *
-     * @returns A reference to the `SubMac` object.
-     *
-     */
-    SubMac &GetSubMac(void) { return mSubMac; }
-
-    /**
      * This method returns true if the raw link-layer is enabled.
      *
      * @returns true if enabled, false otherwise.
      *
      */
-    bool IsEnabled(void) const { return mEnabled; }
+    bool IsEnabled(void) const { return mReceiveDoneCallback != nullptr; }
 
     /**
      * This method enables/disables the raw link-layer.
      *
-     * @param[in]   aEnabled    Whether enable raw link-layer.
+     * @param[in]  aCallback  A pointer to a function called on receipt of a IEEE 802.15.4 frame, nullptr to disable
+     *                        raw link-layer.
+     *
      *
      * @retval OT_ERROR_INVALID_STATE   Thread stack is enabled.
-     * @retval OT_ERROR_FAILED          The radio could not be enabled.
+     * @retval OT_ERROR_FAILED          The radio could not be enabled/disabled.
      * @retval OT_ERROR_NONE            Successfully enabled/disabled raw link.
      *
      */
-    otError SetEnabled(bool aEnabled);
+    otError SetReceiveDone(otLinkRawReceiveDone aCallback);
 
     /**
      * This method returns the capabilities of the raw link-layer.
@@ -105,24 +98,22 @@ public:
     /**
      * This method starts a (recurring) Receive on the link-layer.
      *
-     * @param[in]  aCallback    A pointer to a function called on receipt of a IEEE 802.15.4 frame.
-     *
      * @retval OT_ERROR_NONE             Successfully transitioned to Receive.
      * @retval OT_ERROR_INVALID_STATE    The radio was disabled or transmitting.
      *
      */
-    otError Receive(otLinkRawReceiveDone aCallback);
+    otError Receive(void);
 
     /**
      * This method invokes the mReceiveDoneCallback, if set.
      *
-     * @param[in]  aFrame    A pointer to the received frame or NULL if the receive operation failed.
+     * @param[in]  aFrame    A pointer to the received frame or nullptr if the receive operation failed.
      * @param[in]  aError    OT_ERROR_NONE when successfully received a frame,
      *                       OT_ERROR_ABORT when reception was aborted and a frame was not received,
      *                       OT_ERROR_NO_BUFS when a frame could not be received due to lack of rx buffer space.
      *
      */
-    void InvokeReceiveDone(Frame *aFrame, otError aError);
+    void InvokeReceiveDone(RxFrame *aFrame, otError aError);
 
     /**
      * This method gets the radio transmit frame.
@@ -130,7 +121,7 @@ public:
      * @returns The transmit frame.
      *
      */
-    Frame &GetTransmitFrame(void) { return mSubMac.GetTransmitFrame(); }
+    TxFrame &GetTransmitFrame(void) { return mSubMac.GetTransmitFrame(); }
 
     /**
      * This method starts a (single) Transmit on the link-layer.
@@ -149,14 +140,14 @@ public:
      * This method invokes the mTransmitDoneCallback, if set.
      *
      * @param[in]  aFrame     The transmitted frame.
-     * @param[in]  aAckFrame  A pointer to the ACK frame, NULL if no ACK was received.
+     * @param[in]  aAckFrame  A pointer to the ACK frame, nullptr if no ACK was received.
      * @param[in]  aError     OT_ERROR_NONE when the frame was transmitted,
      *                        OT_ERROR_NO_ACK when the frame was transmitted but no ACK was received,
      *                        OT_ERROR_CHANNEL_ACCESS_FAILURE tx failed due to activity on the channel,
      *                        OT_ERROR_ABORT when transmission was aborted for other reasons.
      *
      */
-    void InvokeTransmitDone(Frame &aFrame, Frame *aAckFrame, otError aError);
+    void InvokeTransmitDone(TxFrame &aFrame, RxFrame *aAckFrame, otError aError);
 
     /**
      * This method starts a (single) Energy Scan on the link-layer.
@@ -253,8 +244,64 @@ public:
      */
     otError SetExtAddress(const ExtAddress &aExtAddress);
 
+    /**
+     * This method updates MAC keys and key index.
+     *
+     * @param[in]   aKeyIdMode        The key ID mode.
+     * @param[in]   aKeyId            The key index.
+     * @param[in]   aPrevKey          The previous MAC key.
+     * @param[in]   aCurrKey          The current MAC key.
+     * @param[in]   aNextKey          The next MAC key.
+     *
+     * @retval OT_ERROR_NONE             If successful.
+     * @retval OT_ERROR_INVALID_STATE    If the raw link-layer isn't enabled.
+     *
+     */
+    otError SetMacKey(uint8_t    aKeyIdMode,
+                      uint8_t    aKeyId,
+                      const Key &aPrevKey,
+                      const Key &aCurrKey,
+                      const Key &aNextKey);
+
+    /**
+     * This method sets the current MAC frame counter value.
+     *
+     * @param[in] aMacFrameCounter  The MAC frame counter value.
+     *
+     * @retval OT_ERROR_NONE             If successful.
+     * @retval OT_ERROR_INVALID_STATE    If the raw link-layer isn't enabled.
+     *
+     */
+    otError SetMacFrameCounter(uint32_t aMacFrameCounter);
+
+    /**
+     * This method records the status of a frame transmission attempt and is mainly used for logging failures.
+     *
+     * Unlike `HandleTransmitDone` which is called after all transmission attempts of frame to indicate final status
+     * of a frame transmission request, this method is invoked on all frame transmission attempts.
+     *
+     * @param[in] aFrame      The transmitted frame.
+     * @param[in] aAckFrame   A pointer to the ACK frame, or nullptr if no ACK was received.
+     * @param[in] aError      OT_ERROR_NONE when the frame was transmitted successfully,
+     *                        OT_ERROR_NO_ACK when the frame was transmitted but no ACK was received,
+     *                        OT_ERROR_CHANNEL_ACCESS_FAILURE tx failed due to activity on the channel,
+     *                        OT_ERROR_ABORT when transmission was aborted for other reasons.
+     * @param[in] aRetryCount Indicates number of transmission retries for this frame.
+     * @param[in] aWillRetx   Indicates whether frame will be retransmitted or not. This is applicable only
+     *                        when there was an error in transmission (i.e., `aError` is not NONE).
+     *
+     */
+#if (OPENTHREAD_CONFIG_LOG_LEVEL >= OT_LOG_LEVEL_INFO) && (OPENTHREAD_CONFIG_LOG_MAC == 1)
+    void RecordFrameTransmitStatus(const TxFrame &aFrame,
+                                   const RxFrame *aAckFrame,
+                                   otError        aError,
+                                   uint8_t        aRetryCount,
+                                   bool           aWillRetx);
+#else
+    void    RecordFrameTransmitStatus(const TxFrame &, const RxFrame *, otError, uint8_t, bool) {}
+#endif
+
 private:
-    bool                    mEnabled;
     uint8_t                 mReceiveChannel;
     PanId                   mPanId;
     otLinkRawReceiveDone    mReceiveDoneCallback;
@@ -263,12 +310,12 @@ private:
 
 #if OPENTHREAD_RADIO
     SubMac mSubMac;
-#elif OPENTHREAD_ENABLE_RAW_LINK_API
+#elif OPENTHREAD_CONFIG_LINK_RAW_ENABLE
     SubMac &mSubMac;
 #endif
 };
 
-#endif // OPENTHREAD_RADIO || OPENTHREAD_ENABLE_RAW_LINK_API
+#endif // OPENTHREAD_RADIO || OPENTHREAD_CONFIG_LINK_RAW_ENABLE
 
 } // namespace Mac
 } // namespace ot

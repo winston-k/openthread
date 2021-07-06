@@ -36,8 +36,9 @@
 #include <openthread/platform/logging.h>
 
 #include "openthread-system.h"
+#include "cli/cli_config.h"
 
-#if OPENTHREAD_EXAMPLES_POSIX
+#if OPENTHREAD_EXAMPLES_SIMULATION
 #include <setjmp.h>
 #include <unistd.h>
 
@@ -46,7 +47,11 @@ jmp_buf gResetJump;
 void __gcov_flush();
 #endif
 
-#if OPENTHREAD_ENABLE_MULTIPLE_INSTANCES
+#ifndef OPENTHREAD_ENABLE_COVERAGE
+#define OPENTHREAD_ENABLE_COVERAGE 0
+#endif
+
+#if OPENTHREAD_CONFIG_HEAP_EXTERNAL_ENABLE
 void *otPlatCAlloc(size_t aNum, size_t aSize)
 {
     return calloc(aNum, aSize);
@@ -60,14 +65,14 @@ void otPlatFree(void *aPtr)
 
 void otTaskletsSignalPending(otInstance *aInstance)
 {
-    (void)aInstance;
+    OT_UNUSED_VARIABLE(aInstance);
 }
 
 int main(int argc, char *argv[])
 {
     otInstance *instance;
 
-#if OPENTHREAD_EXAMPLES_POSIX
+#if OPENTHREAD_EXAMPLES_SIMULATION
     if (setjmp(gResetJump))
     {
         alarm(0);
@@ -78,7 +83,7 @@ int main(int argc, char *argv[])
     }
 #endif
 
-#if OPENTHREAD_ENABLE_MULTIPLE_INSTANCES
+#if OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_ENABLE
     size_t   otInstanceBufferLength = 0;
     uint8_t *otInstanceBuffer       = NULL;
 #endif
@@ -87,7 +92,7 @@ pseudo_reset:
 
     otSysInit(argc, argv);
 
-#if OPENTHREAD_ENABLE_MULTIPLE_INSTANCES
+#if OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_ENABLE
     // Call to query the buffer size
     (void)otInstanceInit(NULL, &otInstanceBufferLength);
 
@@ -102,10 +107,8 @@ pseudo_reset:
 #endif
     assert(instance);
 
+#if OPENTHREAD_CONFIG_CLI_TRANSPORT == OT_CLI_TRANSPORT_UART
     otCliUartInit(instance);
-
-#if OPENTHREAD_ENABLE_DIAG
-    otDiagInit(instance);
 #endif
 
     while (!otSysPseudoResetWasRequested())
@@ -115,7 +118,7 @@ pseudo_reset:
     }
 
     otInstanceFinalize(instance);
-#if OPENTHREAD_ENABLE_MULTIPLE_INSTANCES
+#if OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_ENABLE
     free(otInstanceBuffer);
 #endif
 
@@ -130,13 +133,15 @@ pseudo_reset:
 #if OPENTHREAD_CONFIG_LOG_OUTPUT == OPENTHREAD_CONFIG_LOG_OUTPUT_APP
 void otPlatLog(otLogLevel aLogLevel, otLogRegion aLogRegion, const char *aFormat, ...)
 {
-    OT_UNUSED_VARIABLE(aLogLevel);
-    OT_UNUSED_VARIABLE(aLogRegion);
-    OT_UNUSED_VARIABLE(aFormat);
-
     va_list ap;
     va_start(ap, aFormat);
     otCliPlatLogv(aLogLevel, aLogRegion, aFormat, ap);
     va_end(ap);
 }
+
+void otPlatLogLine(otLogLevel aLogLevel, otLogRegion aLogRegion, const char *aLogLine)
+{
+    otCliPlatLogLine(aLogLevel, aLogRegion, aLogLine);
+}
+
 #endif

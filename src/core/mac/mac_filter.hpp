@@ -36,11 +36,12 @@
 
 #include "openthread-core-config.h"
 
-#include "utils/wrap_stdint.h"
+#include <stdint.h>
 
+#include "common/non_copyable.hpp"
 #include "mac/mac_frame.hpp"
 
-#if OPENTHREAD_ENABLE_MAC_FILTER
+#if OPENTHREAD_CONFIG_MAC_FILTER_ENABLE
 
 namespace ot {
 namespace Mac {
@@ -56,14 +57,37 @@ namespace Mac {
  * This class implements Mac Filter on IEEE 802.15.4 frames.
  *
  */
-class Filter
+class Filter : private NonCopyable
 {
 public:
+    /**
+     * This structure represents a Mac Filter entry (used during iteration).
+     *
+     */
     typedef otMacFilterEntry Entry;
 
-    enum
+    /**
+     * This type represents an iterator used to iterate through filter entries.
+     *
+     * See `GetNextAddress()` and `GetNextRssIn()`.
+     *
+     */
+    typedef otMacFilterIterator Iterator;
+
+    /**
+     * This enumeration type represents the MAC Filter mode.
+     *
+     */
+    enum Mode : uint8_t
     {
-        kMaxEntries = OPENTHREAD_CONFIG_MAC_FILTER_SIZE,
+        kModeRssInOnly = OT_MAC_FILTER_ADDRESS_MODE_DISABLED,  ///< No address filtering. RSS-In update only.
+        kModeAllowlist = OT_MAC_FILTER_ADDRESS_MODE_ALLOWLIST, ///< Enable allowlist address filter mode.
+        kModeDenylist  = OT_MAC_FILTER_ADDRESS_MODE_DENYLIST,  ///< Enable denylist address filter mode.
+    };
+
+    enum : int8_t
+    {
+        kFixedRssDisabled = OT_MAC_FILTER_FIXED_RSS_DISABLED, ///< Value to indicate no fixed RSS is set.
     };
 
     /**
@@ -73,31 +97,20 @@ public:
     Filter(void);
 
     /**
-     * This method returns the maximum number of filter entries.
+     * This method gets the MAC Filter mode.
      *
-     * @returns The maximum number of filter entries.
+     * @returns  the Filter mode.
      *
      */
-    uint8_t GetMaxEntries(void) const { return kMaxEntries; }
+    Mode GetMode(void) const { return mMode; }
 
     /**
-     * This function gets the address mode of the filter.
+     * This method sets the address mode of the filter.
      *
-     * @returns  the address mode.
-     *
-     */
-    otMacFilterAddressMode GetAddressMode(void) const { return mAddressMode; }
-
-    /**
-     * This function sets the address mode of the filter.
-     *
-     * @param[in]  aMode  The address mode to set.
-     *
-     * @retval OT_ERROR_NONE           Successfully set the AddressFilter mode.
-     * @retval OT_ERROR_INVALID_ARGS   @p aMode is not valid address mode.
+     * @param[in]  aMode  The new Filter mode.
      *
      */
-    otError SetAddressMode(otMacFilterAddressMode aMode);
+    void SetMode(Mode aMode) { mMode = aMode; }
 
     /**
      * This method adds an Extended Address to filter.
@@ -105,7 +118,6 @@ public:
      * @param[in]  aExtAddress  A reference to the Extended Address.
      *
      * @retval OT_ERROR_NONE           Successfully added @p aExtAddress to the filter.
-     * @retval OT_ERROR_ALREADY        If @p aExtAddress was already in the Filter.
      * @retval OT_ERROR_NO_BUFS        No available entry exists.
      *
      */
@@ -114,13 +126,12 @@ public:
     /**
      * This method removes an Extended Address from the filter.
      *
-     * @param[in]  aExtAddress  A reference to the Extended Address.
+     * No action is performed if there is no existing entry in the filter list matching the given Extended Address.
      *
-     * @retval OT_ERROR_NONE           Successfully removed @p aExtAddress from the filter.
-     * @retval OT_ERROR_NOT_FOUND      @p aExtAddress is not in the filter.
+     * @param[in]  aExtAddress  A reference to the Extended Address to remove.
      *
      */
-    otError RemoveAddress(const ExtAddress &aExtAddress);
+    void RemoveAddress(const ExtAddress &aExtAddress);
 
     /**
      * This method clears all Extended Addresses from the filter.
@@ -129,54 +140,65 @@ public:
     void ClearAddresses(void);
 
     /**
-     * This method gets an in-use address filter entry.
+     * This method iterates through filter entries.
      *
-     * @param[inout]  aIterator  A reference to the MAC filter iterator context. To get the first in-use address filter
-     *                           entry, it should be set to OT_MAC_FILTER_ITERATOR_INIT.
+     * @param[inout]  aIterator  A reference to the MAC filter iterator context.
+     *                           To get the first in-use address filter, set it to OT_MAC_FILTER_ITERATOR_INIT.
      * @param[out]     aEntry    A reference to where the information is placed.
      *
-     * @retval OT_ERROR_NONE       Successfully retrieved an in-use address filter entry.
+     * @retval OT_ERROR_NONE       Successfully retrieved the next address filter entry.
      * @retval OT_ERROR_NOT_FOUND  No subsequent entry exists.
      *
      */
-    otError GetNextAddress(otMacFilterIterator &aIterator, Entry &aEntry);
+    otError GetNextAddress(Iterator &aIterator, Entry &aEntry) const;
 
     /**
-     * This method sets the received signal strength for the messages from the Extended Address.
-     * The default received signal strength for all received messages would be set if no Extended Address is specified.
+     * This method adds a fixed received signal strength entry for the messages from a given Extended Address.
      *
-     * @param[in]  aExtAddress  A pointer to the Extended Address, or NULL to set the default received signal strength.
+     * @param[in]  aExtAddress  An Extended Address
      * @param[in]  aRss         The received signal strength to set.
      *
-     * @retval OT_ERROR_NONE     Successfully set @p aRss for @p aExtAddress, or
-     *                           set the default @p aRss for all received messages if @p aExtAddress is NULL.
+     * @retval OT_ERROR_NONE     Successfully set @p aRss for @p aExtAddress.
      * @retval OT_ERROR_NO_BUFS  No available entry exists.
      *
      */
-    otError AddRssIn(const ExtAddress *aExtAddress, int8_t aRss);
+    otError AddRssIn(const ExtAddress &aExtAddress, int8_t aRss);
 
     /**
-     * This method removes the received signal strength setting for the received messages from the Extended Address,
-     * or removes the default received signal strength setting if no Extended Address is specified.
+     * This method removes a fixed received signal strength entry for a given Extended Address.
      *
-     * @param[in]  aExtAddress  A pointer to the Extended Address.
+     * No action is performed if there is no existing entry in the filter list matching the given Extended Address.
      *
-     * @retval OT_ERROR_NONE       Successfully removed the received signal strength setting for the received
-     *                             messages from @p aExtAddress or removed the default received signal strength
-     *                             setting if @p aExtAddress is NULL.
-     * @retval OT_ERROR_NOT_FOUND  @p aExtAddress is not in the RssIn filter if it is not NULL.
+     * @param[in]  aExtAddress   A Extended Address.
      *
      */
-    otError RemoveRssIn(const ExtAddress *aExtAddress);
+    void RemoveRssIn(const ExtAddress &aExtAddress);
 
     /**
-     * This method clears all the received signal strength settings.
+     * This method sets the default received signal strength.
+     *
+     * The default RSS value is used for all received frames from addresses for which there is no explicit RSS-IN entry
+     * in the Filter list (added using `AddRssIn()`).
+     *
+     * @param[in]  aRss  The default received signal strength to set.
      *
      */
-    void ClearRssIn(void);
+    void SetDefaultRssIn(int8_t aRss) { mDefaultRssIn = aRss; }
 
     /**
-     * This method gets an in-use RssIn filter entry.
+     * This method clears the default received signal strength.
+     *
+     */
+    void ClearDefaultRssIn(void) { mDefaultRssIn = kFixedRssDisabled; }
+
+    /**
+     * This method clears all the received signal strength settings (inlcuding the default RSS-In).
+     *
+     */
+    void ClearAllRssIn(void);
+
+    /**
+     * This method iterates through RssIn filter entry.
      *
      * @param[inout]  aIterator  A reference to the MAC filter iterator context. To get the first in-use RssIn
      *                           filter entry, it should be set to OT_MAC_FILTER_ITERATOR_INIT.
@@ -184,32 +206,46 @@ public:
      *                           Extended Address as all 0xff to indicate the default received signal strength
      *                           if it was set.
      *
-     * @retval OT_ERROR_NONE       Successfully retrieved the in-use RssIn filter entry.
+     * @retval OT_ERROR_NONE       Successfully retrieved the next RssIn filter entry.
      * @retval OT_ERROR_NOT_FOUND  No subsequent entry exists.
      *
      */
-    otError GetNextRssIn(otMacFilterIterator &aIterator, Entry &aEntry);
+    otError GetNextRssIn(Iterator &aIterator, Entry &aEntry);
 
     /**
-     * This method applies the filter rules on the Extended Address.
+     * This method applies the filter rules on a given Extended Address.
      *
      * @param[in]  aExtAddress  A reference to the Extended Address.
      * @param[out] aRss         A reference to where the received signal strength to be placed.
      *
      * @retval OT_ERROR_NONE                Successfully applied the filter rules on @p aExtAddress.
-     * @retval OT_ERROR_ADDRESS_FILTERED    Address filter (whitelist or blacklist) is enabled and @p aExtAddress is
+     * @retval OT_ERROR_ADDRESS_FILTERED    Address filter (allowlist or denylist) is enabled and @p aExtAddress is
      *                                      filtered.
      *
      */
     otError Apply(const ExtAddress &aExtAddress, int8_t &aRss);
 
 private:
-    Entry *FindAvailEntry(void);
-    Entry *FindEntry(const ExtAddress &aExtAddress);
+    enum
+    {
+        kMaxEntries = OPENTHREAD_CONFIG_MAC_FILTER_SIZE, // The maximum number of filter entries.
+    };
 
-    Entry                  mEntries[kMaxEntries];
-    otMacFilterAddressMode mAddressMode;
-    int8_t                 mRssIn;
+    struct FilterEntry
+    {
+        bool       mFiltered;   // Indicates whether or not this entry is filtered (allowlist/denylist modes).
+        int8_t     mRssIn;      // The RssIn value for this entry or `kFixedRssDisabled`.
+        ExtAddress mExtAddress; // IEEE 802.15.4 Extended Address.
+
+        bool IsInUse(void) const { return mFiltered || (mRssIn != kFixedRssDisabled); }
+    };
+
+    FilterEntry *FindAvailableEntry(void);
+    FilterEntry *FindEntry(const ExtAddress &aExtAddress);
+
+    Mode        mMode;
+    int8_t      mDefaultRssIn;
+    FilterEntry mFilterEntries[kMaxEntries];
 };
 
 /**
@@ -220,6 +256,6 @@ private:
 } // namespace Mac
 } // namespace ot
 
-#endif // OPENTHREAD_ENABLE_MAC_FILTER
+#endif // OPENTHREAD_CONFIG_MAC_FILTER_ENABLE
 
 #endif // MAC_FILTER_HPP_

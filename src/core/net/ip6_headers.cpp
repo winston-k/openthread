@@ -42,8 +42,7 @@ otError Header::Init(const Message &aMessage)
 {
     otError error = OT_ERROR_NONE;
 
-    // check aMessage length
-    VerifyOrExit(aMessage.Read(0, sizeof(*this), this) == sizeof(*this), error = OT_ERROR_PARSE);
+    SuccessOrExit(error = aMessage.Read(0, *this));
 
     VerifyOrExit(IsValid(), error = OT_ERROR_PARSE);
     VerifyOrExit((sizeof(*this) + GetPayloadLength()) == aMessage.GetLength(), error = OT_ERROR_PARSE);
@@ -60,7 +59,11 @@ bool Header::IsValid(void) const
     VerifyOrExit(IsVersion6(), ret = false);
 
     // check Payload Length
+#if !OPENTHREAD_CONFIG_IP6_FRAGMENTATION_ENABLE
     VerifyOrExit((sizeof(*this) + GetPayloadLength()) <= Ip6::kMaxDatagramLength, ret = false);
+#else
+    VerifyOrExit((sizeof(*this) + GetPayloadLength()) <= Ip6::kMaxAssembledDatagramLength, ret = false);
+#endif
 
 exit:
     return ret;

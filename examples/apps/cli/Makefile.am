@@ -34,6 +34,7 @@ bin_PROGRAMS                                                           = \
 
 CPPFLAGS_COMMON                                                       += \
     -I$(top_srcdir)/include                                              \
+    -I$(top_srcdir)/src                                                  \
     -I$(top_srcdir)/src/core                                             \
     -I$(top_srcdir)/examples/platforms                                   \
     $(NULL)
@@ -56,12 +57,6 @@ LDADD_COMMON                                                          += \
     $(top_builddir)/third_party/mbedtls/libmbedcrypto.a                  \
     $(NULL)
 endif # OPENTHREAD_ENABLE_BUILTIN_MBEDTLS
-
-if OPENTHREAD_ENABLE_DIAG
-LDADD_COMMON                                                          += \
-    $(top_builddir)/src/diag/libopenthread-diag.a                        \
-    $(NULL)
-endif # OPENTHREAD_ENABLE_DIAG
 
 if OPENTHREAD_ENABLE_FTD
 bin_PROGRAMS                                                          += \

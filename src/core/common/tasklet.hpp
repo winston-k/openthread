@@ -41,6 +41,7 @@
 #include <openthread/tasklet.h>
 
 #include "common/locator.hpp"
+#include "common/non_copyable.hpp"
 
 namespace ot {
 
@@ -60,34 +61,44 @@ class TaskletScheduler;
  * This class is used to represent a tasklet.
  *
  */
-class Tasklet : public InstanceLocator, public OwnerLocator
+class Tasklet : public InstanceLocator
 {
     friend class TaskletScheduler;
 
 public:
     /**
-     * This function pointer is called when the tasklet is run.
+     * This function reference is called when the tasklet is run.
      *
      * @param[in]  aTasklet  A reference to the tasklet being run.
      *
      */
-    typedef void (*Handler)(Tasklet &aTasklet);
+    typedef void (&Handler)(Tasklet &aTasklet);
 
     /**
      * This constructor creates a tasklet instance.
      *
      * @param[in]  aInstance   A reference to the OpenThread instance object.
      * @param[in]  aHandler    A pointer to a function that is called when the tasklet is run.
-     * @param[in]  aOwner      A pointer to owner of this `Tasklet` object.
      *
      */
-    Tasklet(Instance &aInstance, Handler aHandler, void *aOwner);
+    Tasklet(Instance &aInstance, Handler aHandler);
 
     /**
-     * This method puts the tasklet on the run queue.
+     * This method puts the tasklet on the tasklet scheduler run queue.
+     *
+     * If the tasklet is already posted, no change is made and run queue stays as before.
      *
      */
-    otError Post(void);
+    void Post(void);
+
+    /**
+     * This method indicates whether the tasklet is posted or not.
+     *
+     * @retval TRUE  The tasklet is posted.
+     * @retval FALSE The tasklet is not posted.
+     *
+     */
+    bool IsPosted(void) const { return (mNext != nullptr); }
 
 private:
     void RunTask(void) { mHandler(*this); }
@@ -117,7 +128,7 @@ public:
      *
      */
     TaskletContext(Instance &aInstance, Handler aHandler, void *aContext)
-        : Tasklet(aInstance, aHandler, aContext)
+        : Tasklet(aInstance, aHandler)
         , mContext(aContext)
     {
     }
@@ -138,8 +149,10 @@ private:
  * This class implements the tasklet scheduler.
  *
  */
-class TaskletScheduler
+class TaskletScheduler : private NonCopyable
 {
+    friend class Tasklet;
+
 public:
     /**
      * This constructor initializes the object.
@@ -148,23 +161,13 @@ public:
     TaskletScheduler(void);
 
     /**
-     * This method enqueues a tasklet into the run queue.
-     *
-     * @param[in]  aTasklet  A reference to the tasklet to enqueue.
-     *
-     * @retval OT_ERROR_NONE     Successfully enqueued the tasklet.
-     * @retval OT_ERROR_ALREADY  The tasklet was already enqueued.
-     */
-    otError Post(Tasklet &aTasklet);
-
-    /**
      * This method indicates whether or not there are tasklets pending.
      *
      * @retval TRUE   If there are tasklets pending.
      * @retval FALSE  If there are no tasklets pending.
      *
      */
-    bool AreTaskletsPending(void) { return mHead != NULL; }
+    bool AreTaskletsPending(void) const { return mTail != nullptr; }
 
     /**
      * This method processes all tasklets queued when this is called.
@@ -173,9 +176,9 @@ public:
     void ProcessQueuedTasklets(void);
 
 private:
-    Tasklet *PopTasklet(void);
-    Tasklet *mHead;
-    Tasklet *mTail;
+    void PostTasklet(Tasklet &aTasklet);
+
+    Tasklet *mTail; // A circular singly linked-list
 };
 
 /**

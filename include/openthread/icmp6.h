@@ -58,9 +58,14 @@ extern "C" {
  */
 typedef enum otIcmp6Type
 {
-    OT_ICMP6_TYPE_DST_UNREACH  = 1,   ///< Destination Unreachable
-    OT_ICMP6_TYPE_ECHO_REQUEST = 128, ///< Echo Request
-    OT_ICMP6_TYPE_ECHO_REPLY   = 129, ///< Echo Reply
+    OT_ICMP6_TYPE_DST_UNREACH       = 1,   ///< Destination Unreachable
+    OT_ICMP6_TYPE_PACKET_TO_BIG     = 2,   ///< Packet To Big
+    OT_ICMP6_TYPE_TIME_EXCEEDED     = 3,   ///< Time Exceeded
+    OT_ICMP6_TYPE_PARAMETER_PROBLEM = 4,   ///< Parameter Problem
+    OT_ICMP6_TYPE_ECHO_REQUEST      = 128, ///< Echo Request
+    OT_ICMP6_TYPE_ECHO_REPLY        = 129, ///< Echo Reply
+    OT_ICMP6_TYPE_ROUTER_SOLICIT    = 133, ///< Router Solicitation
+    OT_ICMP6_TYPE_ROUTER_ADVERT     = 134, ///< Router Advertisement
 } otIcmp6Type;
 
 /**
@@ -70,6 +75,7 @@ typedef enum otIcmp6Type
 typedef enum otIcmp6Code
 {
     OT_ICMP6_CODE_DST_UNREACH_NO_ROUTE = 0, ///< Destination Unreachable No Route
+    OT_ICMP6_CODE_FRAGM_REAS_TIME_EX   = 1, ///< Fragment Reassembly Time Exceeded
 } otIcmp6Code;
 
 #define OT_ICMP6_HEADER_DATA_SIZE 4 ///< Size of an message specific data of ICMPv6 Header.

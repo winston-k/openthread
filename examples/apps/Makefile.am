@@ -47,14 +47,11 @@ endif
 
 if OPENTHREAD_ENABLE_NCP
 SUBDIRS                                += ncp
+else
+if OPENTHREAD_ENABLE_RADIO_ONLY
+SUBDIRS                                += ncp
 endif
 endif
-
-# Always pretty (e.g. for 'make pretty') these subdirectories.
-
-PRETTY_SUBDIRS                          = \
-    cli                                   \
-    ncp                                   \
-    $(NULL)
+endif
 
 include $(abs_top_nlbuild_autotools_dir)/automake/post.am

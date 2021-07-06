@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2018, The OpenThread Authors.
 #  All rights reserved.
@@ -26,20 +26,20 @@
 #  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 #  POSSIBILITY OF SUCH DAMAGE.
 
-import time
 import wpan
 from wpan import verify
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test description: Verify sequential reset recovery of a router and leader
 #
 
 test_name = __file__[:-3] if __file__.endswith('.py') else __file__
-print '-' * 120
-print 'Starting \'{}\''.format(test_name)
+print('-' * 120)
+print('Starting \'{}\''.format(test_name))
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Utility functions
+
 
 def verify_neighbor_table(node, neighbors):
     """
@@ -54,45 +54,50 @@ def verify_neighbor_table(node, neighbors):
         else:
             raise wpan.VerifyError('Failed to find a neighbor entry for extended address {} in table'.format(ext_addr))
 
-#-----------------------------------------------------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------------------------------------------------
 # Creating `wpan.Nodes` instances
 
 speedup = 4
 wpan.Node.set_time_speedup_factor(speedup)
 
-r1 = wpan.Node();
-r2 = wpan.Node();
-c2 = wpan.Node();  # c2 is used to force r2 becoming router
+r1 = wpan.Node()
+r2 = wpan.Node()
+c2 = wpan.Node()
+# c2 is used to force r2 becoming router
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Init all nodes
 
 wpan.Node.init_all_nodes()
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Build network topology
 #
 
 r1.form("RtrLderRst")
 
-r1.whitelist_node(r2)
-r2.whitelist_node(r1)
+r1.allowlist_node(r2)
+r2.allowlist_node(r1)
 r2.join_node(r1, wpan.JOIN_TYPE_ROUTER)
 
-c2.whitelist_node(r2)
-r2.whitelist_node(c2)
+c2.allowlist_node(r2)
+r2.allowlist_node(c2)
 c2.join_node(r2, wpan.JOIN_TYPE_END_DEVICE)
 c2.set(wpan.WPAN_POLL_INTERVAL, '8000')
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test implementation
 
 WAIT_INTERVAL = 6
 
 # Check that r1 and r2 are present in each other's neighbor table
+
+
 def check_neighbor_tables():
     verify_neighbor_table(r1, [r2])
     verify_neighbor_table(r2, [r1])
+
 
 wpan.verify_within(check_neighbor_tables, WAIT_INTERVAL)
 
@@ -102,21 +107,24 @@ verify(r2.get(wpan.WPAN_NODE_TYPE) == wpan.NODE_TYPE_ROUTER)
 # Reset r2 and wait for it to be associated.
 r2.reset()
 
+
 def check_r2_neighbor_table():
     verify(r2.is_associated())
     verify_neighbor_table(r2, [r1])
+
 
 wpan.verify_within(check_r2_neighbor_table, WAIT_INTERVAL)
 verify(r1.get(wpan.WPAN_NODE_TYPE) == wpan.NODE_TYPE_LEADER)
 verify(r2.get(wpan.WPAN_NODE_TYPE) == wpan.NODE_TYPE_ROUTER)
 
-
 # Now reset r1 and check that everything recover correctly.
 r1.reset()
+
 
 def check_r1_neighbor_table():
     verify(r1.is_associated())
     verify_neighbor_table(r1, [r2])
+
 
 wpan.verify_within(check_r1_neighbor_table, WAIT_INTERVAL)
 verify(r1.get(wpan.WPAN_NODE_TYPE) == wpan.NODE_TYPE_LEADER)
@@ -124,9 +132,9 @@ verify(r2.get(wpan.WPAN_NODE_TYPE) == wpan.NODE_TYPE_ROUTER)
 
 wpan.verify_within(check_r2_neighbor_table, WAIT_INTERVAL)
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test finished
 
 wpan.Node.finalize_all_nodes()
 
-print '\'{}\' passed.'.format(test_name)
+print('\'{}\' passed.'.format(test_name))

@@ -28,18 +28,27 @@
 
 /**
  * @file
- *   This file implements the CLI server on the UART service.
+ *   This file implements the CLI interpreter on the UART service.
  */
 
 #include "cli_uart.hpp"
 
+#if OPENTHREAD_CONFIG_CLI_TRANSPORT == OT_CLI_TRANSPORT_UART
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#if OPENTHREAD_POSIX
+#include <signal.h>
+#include <sys/types.h>
+#endif
 
 #include <openthread/cli.h>
 #include <openthread/platform/logging.h>
 #include <openthread/platform/uart.h>
+#if OPENTHREAD_CONFIG_ENABLE_DEBUG_UART
+#include <openthread/platform/debug_uart.h>
+#endif
 
 #include "cli/cli.hpp"
 #include "common/code_utils.hpp"
@@ -47,12 +56,6 @@
 #include "common/logging.hpp"
 #include "common/new.hpp"
 #include "common/tasklet.hpp"
-#include "utils/static_assert.hpp"
-#include "utils/wrap_string.h"
-
-#if OPENTHREAD_CONFIG_ENABLE_DEBUG_UART
-#include <openthread/platform/debug_uart.h>
-#endif
 
 #ifdef OT_CLI_UART_LOCK_HDR_FILE
 
@@ -86,64 +89,45 @@
 
 #endif // OT_CLI_UART_LOCK_HDR_FILE
 
-#if OPENTHREAD_ENABLE_DIAG
-OT_STATIC_ASSERT(OPENTHREAD_CONFIG_DIAG_OUTPUT_BUFFER_SIZE <= OPENTHREAD_CONFIG_CLI_UART_TX_BUFFER_SIZE,
-                 "diag output buffer should be smaller than CLI UART tx buffer");
-OT_STATIC_ASSERT(OPENTHREAD_CONFIG_DIAG_CMD_LINE_BUFFER_SIZE <= OPENTHREAD_CONFIG_CLI_UART_RX_BUFFER_SIZE,
-                 "diag command line should be smaller than CLI UART rx buffer");
+#if OPENTHREAD_CONFIG_DIAG_ENABLE
+static_assert(OPENTHREAD_CONFIG_DIAG_OUTPUT_BUFFER_SIZE <= OPENTHREAD_CONFIG_CLI_UART_TX_BUFFER_SIZE,
+              "diag output buffer should be smaller than CLI UART tx buffer");
+static_assert(OPENTHREAD_CONFIG_DIAG_CMD_LINE_BUFFER_SIZE <= OPENTHREAD_CONFIG_CLI_UART_RX_BUFFER_SIZE,
+              "diag command line should be smaller than CLI UART rx buffer");
 #endif
 
-OT_STATIC_ASSERT(OPENTHREAD_CONFIG_CLI_MAX_LINE_LENGTH <= OPENTHREAD_CONFIG_CLI_UART_RX_BUFFER_SIZE,
-                 "command line should be should be smaller than CLI rx buffer");
+static_assert(OPENTHREAD_CONFIG_CLI_MAX_LINE_LENGTH <= OPENTHREAD_CONFIG_CLI_UART_RX_BUFFER_SIZE,
+              "command line should be should be smaller than CLI rx buffer");
 
 namespace ot {
 namespace Cli {
 
-static otDEFINE_ALIGNED_VAR(sCliUartRaw, sizeof(Uart), uint64_t);
+static OT_DEFINE_ALIGNED_VAR(sCliUartRaw, sizeof(Uart), uint64_t);
 
-extern "C" void otCliUartInit(otInstance *aInstance)
+void Uart::Initialize(otInstance *aInstance)
 {
-    Instance *instance = static_cast<Instance *>(aInstance);
-
-    Server::sServer = new (&sCliUartRaw) Uart(instance);
+    Instance *instance        = static_cast<Instance *>(aInstance);
+    Interpreter::sInterpreter = new (&sCliUartRaw) Uart(instance);
 }
 
 Uart::Uart(Instance *aInstance)
-    : Server(aInstance)
+    : Interpreter(aInstance)
 {
     mRxLength   = 0;
     mTxHead     = 0;
     mTxLength   = 0;
     mSendLength = 0;
 
-    otPlatUartEnable();
-}
-
-extern "C" void otPlatUartReceived(const uint8_t *aBuf, uint16_t aBufLength)
-{
-    static_cast<Uart *>(Server::sServer)->ReceiveTask(aBuf, aBufLength);
+    IgnoreError(otPlatUartEnable());
 }
 
 void Uart::ReceiveTask(const uint8_t *aBuf, uint16_t aBufLength)
 {
-    static const char sCommandPrompt[] = {'>', ' '};
-
-#if OPENTHREAD_CONFIG_UART_CLI_RAW
-    if (aBufLength > 0)
-    {
-        memcpy(mRxBuffer + mRxLength, aBuf, aBufLength);
-        mRxLength += aBufLength;
-    }
-
-    if (aBuf[aBufLength - 1] == '\r' || aBuf[aBufLength - 1] == '\n')
-    {
-        mRxBuffer[mRxLength] = '\0';
-        ProcessCommand();
-        Output(sCommandPrompt, sizeof(sCommandPrompt));
-    }
-#else // OPENTHREAD_CONFIG_UART_CLI_RAW
+#if !OPENTHREAD_CONFIG_UART_CLI_RAW
     static const char sEraseString[] = {'\b', ' ', '\b'};
     static const char CRNL[]         = {'\r', '\n'};
+#endif
+    static const char sCommandPrompt[] = {'>', ' '};
     const uint8_t *   end;
 
     end = aBuf + aBufLength;
@@ -154,19 +138,25 @@ void Uart::ReceiveTask(const uint8_t *aBuf, uint16_t aBufLength)
         {
         case '\r':
         case '\n':
+#if !OPENTHREAD_CONFIG_UART_CLI_RAW
             Output(CRNL, sizeof(CRNL));
-
+#endif
             if (mRxLength > 0)
             {
                 mRxBuffer[mRxLength] = '\0';
-                ProcessCommand();
+                IgnoreError(ProcessCommand());
             }
 
             Output(sCommandPrompt, sizeof(sCommandPrompt));
 
             break;
 
+#if !OPENTHREAD_CONFIG_UART_CLI_RAW
 #if OPENTHREAD_POSIX
+
+        case 0x03: // ASCII for Ctrl-C
+            kill(0, SIGINT);
+            break;
 
         case 0x04: // ASCII for Ctrl-D
             exit(EXIT_SUCCESS);
@@ -182,30 +172,27 @@ void Uart::ReceiveTask(const uint8_t *aBuf, uint16_t aBufLength)
             }
 
             break;
+#endif // !OPENTHREAD_CONFIG_UART_CLI_RAW
 
         default:
             if (mRxLength < kRxBufferSize - 1)
             {
+#if !OPENTHREAD_CONFIG_UART_CLI_RAW
                 Output(reinterpret_cast<const char *>(aBuf), 1);
+#endif
                 mRxBuffer[mRxLength++] = static_cast<char>(*aBuf);
             }
 
             break;
         }
     }
-#endif // OPENTHREAD_CONFIG_UART_CLI_RAW
 }
 
 otError Uart::ProcessCommand(void)
 {
     otError error = OT_ERROR_NONE;
 
-    if (mRxBuffer[mRxLength - 1] == '\n')
-    {
-        mRxBuffer[--mRxLength] = '\0';
-    }
-
-    if (mRxBuffer[mRxLength - 1] == '\r')
+    while (mRxBuffer[mRxLength - 1] == '\n' || mRxBuffer[mRxLength - 1] == '\r')
     {
         mRxBuffer[--mRxLength] = '\0';
     }
@@ -232,7 +219,7 @@ otError Uart::ProcessCommand(void)
      * Thus this is here to affirmatively LOG exactly when the CLI
      * command is being executed.
      */
-#if OPENTHREAD_ENABLE_MULTIPLE_INSTANCES
+#if OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_ENABLE
     /* TODO: how exactly do we get the instance here? */
 #else
     otLogInfoCli("execute command: %s", mRxBuffer);
@@ -240,7 +227,7 @@ otError Uart::ProcessCommand(void)
 #endif
     if (mRxLength > 0)
     {
-        mInterpreter.ProcessLine(mRxBuffer, mRxLength, *this);
+        ProcessLine(mRxBuffer);
     }
 
     mRxLength = 0;
@@ -248,28 +235,60 @@ otError Uart::ProcessCommand(void)
     return error;
 }
 
+int Interpreter::Output(const char *aBuf, uint16_t aBufLength)
+{
+    return static_cast<Uart *>(this)->Output(aBuf, aBufLength);
+}
+
 int Uart::Output(const char *aBuf, uint16_t aBufLength)
 {
     OT_CLI_UART_OUTPUT_LOCK();
-    uint16_t remaining = kTxBufferSize - mTxLength;
-    uint16_t tail;
+    uint16_t sent = 0;
 
-    if (aBufLength > remaining)
+    while (aBufLength > 0)
     {
-        aBufLength = remaining;
+        uint16_t remaining = kTxBufferSize - mTxLength;
+        uint16_t tail;
+        uint16_t sendLength = aBufLength;
+
+        if (sendLength > remaining)
+        {
+            sendLength = remaining;
+        }
+
+        for (uint16_t i = 0; i < sendLength; i++)
+        {
+            tail            = (mTxHead + mTxLength) % kTxBufferSize;
+            mTxBuffer[tail] = *aBuf++;
+            aBufLength--;
+            mTxLength++;
+        }
+
+        Send();
+
+        sent += sendLength;
+
+        if (aBufLength > 0)
+        {
+            // More to send, so flush what's waiting now
+            otError err = otPlatUartFlush();
+
+            if (err == OT_ERROR_NONE)
+            {
+                // Flush successful, reset the pointers
+                SendDoneTask();
+            }
+            else
+            {
+                // Flush did not succeed, so abort here.
+                break;
+            }
+        }
     }
 
-    for (int i = 0; i < aBufLength; i++)
-    {
-        tail            = (mTxHead + mTxLength) % kTxBufferSize;
-        mTxBuffer[tail] = *aBuf++;
-        mTxLength++;
-    }
-
-    Send();
     OT_CLI_UART_OUTPUT_UNLOCK();
 
-    return aBufLength;
+    return sent;
 }
 
 void Uart::Send(void)
@@ -291,16 +310,11 @@ void Uart::Send(void)
         /* duplicate the output to the debug uart */
         otPlatDebugUart_write_bytes(reinterpret_cast<uint8_t *>(mTxBuffer + mTxHead), mSendLength);
 #endif
-        otPlatUartSend(reinterpret_cast<uint8_t *>(mTxBuffer + mTxHead), mSendLength);
+        IgnoreError(otPlatUartSend(reinterpret_cast<uint8_t *>(mTxBuffer + mTxHead), mSendLength));
     }
 
 exit:
     return;
-}
-
-extern "C" void otPlatUartSendDone(void)
-{
-    static_cast<Uart *>(Server::sServer)->SendDoneTask();
 }
 
 void Uart::SendDoneTask(void)
@@ -312,5 +326,22 @@ void Uart::SendDoneTask(void)
     Send();
 }
 
+extern "C" void otCliUartInit(otInstance *aInstance)
+{
+    Uart::Initialize(aInstance);
+}
+
+extern "C" void otPlatUartReceived(const uint8_t *aBuf, uint16_t aBufLength)
+{
+    static_cast<Uart &>(Interpreter::GetInterpreter()).ReceiveTask(aBuf, aBufLength);
+}
+
+extern "C" void otPlatUartSendDone(void)
+{
+    static_cast<Uart &>(Interpreter::GetInterpreter()).SendDoneTask();
+}
+
 } // namespace Cli
 } // namespace ot
+
+#endif // OPENTHREAD_CONFIG_CLI_TRANSPORT == OT_CLI_TRANSPORT_UART

@@ -31,21 +31,28 @@
  *   This file implements the OpenThread Instance API.
  */
 
-#define WPP_NAME "instance_api.tmh"
-
 #include "openthread-core-config.h"
 
 #include <openthread/instance.h>
 #include <openthread/platform/misc.h>
-#include <openthread/platform/radio.h>
 
 #include "common/instance.hpp"
+#include "common/locator-getters.hpp"
 #include "common/logging.hpp"
 #include "common/new.hpp"
+#include "radio/radio.hpp"
+
+#ifdef __ANDROID__
+#ifdef OPENTHREAD_ENABLE_ANDROID_NDK
+#include <sys/system_properties.h>
+#else
+#include <cutils/properties.h>
+#endif
+#endif
 
 using namespace ot;
 
-#if OPENTHREAD_ENABLE_MULTIPLE_INSTANCES
+#if OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_ENABLE
 otInstance *otInstanceInit(void *aInstanceBuffer, size_t *aInstanceBufferSize)
 {
     Instance *instance;
@@ -60,7 +67,7 @@ otInstance *otInstanceInitSingle(void)
 {
     return &Instance::InitSingle();
 }
-#endif // #if OPENTHREAD_ENABLE_MULTIPLE_INSTANCES
+#endif // #if OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_ENABLE
 
 bool otInstanceIsInitialized(otInstance *aInstance)
 {
@@ -92,14 +99,14 @@ otError otSetStateChangedCallback(otInstance *aInstance, otStateChangedCallback 
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetNotifier().RegisterCallback(aCallback, aContext);
+    return instance.Get<Notifier>().RegisterCallback(aCallback, aContext);
 }
 
 void otRemoveStateChangeCallback(otInstance *aInstance, otStateChangedCallback aCallback, void *aContext)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    instance.GetNotifier().RemoveCallback(aCallback, aContext);
+    instance.Get<Notifier>().RemoveCallback(aCallback, aContext);
 }
 
 void otInstanceFactoryReset(otInstance *aInstance)
@@ -135,6 +142,24 @@ const char *otGetVersionString(void)
      * image will be undefined and may change.
      */
 
+#ifdef __ANDROID__
+
+#ifdef OPENTHREAD_ENABLE_ANDROID_NDK
+    static char sVersion[100 + PROP_VALUE_MAX];
+    char        dateTime[PROP_VALUE_MAX];
+
+    __system_property_get("ro.build.date", dateTime);
+#else
+    static char sVersion[100 + PROPERTY_VALUE_MAX];
+    char        dateTime[PROPERTY_VALUE_MAX];
+
+    property_get("ro.build.date", dateTime, "Thu Jan 1 1970 UTC 00:00:00");
+#endif
+
+    snprintf(sVersion, sizeof(sVersion), "%s/%s ;%s ; %s", PACKAGE_NAME, PACKAGE_VERSION,
+             OPENTHREAD_CONFIG_PLATFORM_INFO, dateTime);
+#else
+
 #ifdef PLATFORM_VERSION_ATTR_PREFIX
     PLATFORM_VERSION_ATTR_PREFIX
 #else
@@ -149,16 +174,14 @@ const char *otGetVersionString(void)
 #endif
         ; // Trailing semicolon to end statement.
 
+#endif
+
     return sVersion;
 }
 
 const char *otGetRadioVersionString(otInstance *aInstance)
 {
-    return otPlatRadioGetVersionString(aInstance);
-}
+    Instance &instance = *static_cast<Instance *>(aInstance);
 
-OT_TOOL_WEAK const char *otPlatRadioGetVersionString(otInstance *aInstance)
-{
-    OT_UNUSED_VARIABLE(aInstance);
-    return otGetVersionString();
+    return instance.Get<Radio>().GetVersionString();
 }

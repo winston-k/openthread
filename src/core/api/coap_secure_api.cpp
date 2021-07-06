@@ -39,111 +39,71 @@
 #include "coap/coap_message.hpp"
 #include "coap/coap_secure.hpp"
 #include "common/instance.hpp"
+#include "common/locator-getters.hpp"
 
-#if OPENTHREAD_ENABLE_APPLICATION_COAP_SECURE
+#if OPENTHREAD_CONFIG_COAP_SECURE_API_ENABLE
 
 using namespace ot;
 
-otError otCoapSecureStart(otInstance *aInstance, uint16_t aPort, void *aContext)
+otError otCoapSecureStart(otInstance *aInstance, uint16_t aPort)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetApplicationCoapSecure().Start(aPort, NULL, aContext);
+    return instance.GetApplicationCoapSecure().Start(aPort);
 }
 
-otError otCoapSecureSetCertificate(otInstance *   aInstance,
-                                   const uint8_t *aX509Cert,
-                                   uint32_t       aX509Length,
-                                   const uint8_t *aPrivateKey,
-                                   uint32_t       aPrivateKeyLength)
-{
 #ifdef MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED
+void otCoapSecureSetCertificate(otInstance *   aInstance,
+                                const uint8_t *aX509Cert,
+                                uint32_t       aX509Length,
+                                const uint8_t *aPrivateKey,
+                                uint32_t       aPrivateKeyLength)
+{
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    if (aX509Cert == NULL || aX509Length == 0 || aPrivateKey == NULL || aPrivateKeyLength == 0)
-    {
-        return OT_ERROR_INVALID_ARGS;
-    }
+    OT_ASSERT(aX509Cert != nullptr && aX509Length != 0 && aPrivateKey != nullptr && aPrivateKeyLength != 0);
 
-    return instance.GetApplicationCoapSecure().SetCertificate(aX509Cert, aX509Length, aPrivateKey, aPrivateKeyLength);
-#else
-    OT_UNUSED_VARIABLE(aInstance);
-    OT_UNUSED_VARIABLE(aX509Cert);
-    OT_UNUSED_VARIABLE(aX509Length);
-    OT_UNUSED_VARIABLE(aPrivateKey);
-    OT_UNUSED_VARIABLE(aPrivateKeyLength);
-
-    return OT_ERROR_DISABLED_FEATURE;
-#endif // MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED
+    instance.GetApplicationCoapSecure().SetCertificate(aX509Cert, aX509Length, aPrivateKey, aPrivateKeyLength);
 }
 
-otError otCoapSecureSetCaCertificateChain(otInstance *   aInstance,
-                                          const uint8_t *aX509CaCertificateChain,
-                                          uint32_t       aX509CaCertChainLength)
+void otCoapSecureSetCaCertificateChain(otInstance *   aInstance,
+                                       const uint8_t *aX509CaCertificateChain,
+                                       uint32_t       aX509CaCertChainLength)
 {
-#ifdef MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    if (aX509CaCertificateChain == NULL || aX509CaCertChainLength == 0)
-    {
-        return OT_ERROR_INVALID_ARGS;
-    }
+    OT_ASSERT(aX509CaCertificateChain != nullptr && aX509CaCertChainLength != 0);
 
-    return instance.GetApplicationCoapSecure().SetCaCertificateChain(aX509CaCertificateChain, aX509CaCertChainLength);
-#else
-    OT_UNUSED_VARIABLE(aInstance);
-    OT_UNUSED_VARIABLE(aX509CaCertificateChain);
-    OT_UNUSED_VARIABLE(aX509CaCertChainLength);
-
-    return OT_ERROR_DISABLED_FEATURE;
-#endif // MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED
+    instance.GetApplicationCoapSecure().SetCaCertificateChain(aX509CaCertificateChain, aX509CaCertChainLength);
 }
+#endif // MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA_ENABLED
 
-otError otCoapSecureSetPsk(otInstance *   aInstance,
-                           const uint8_t *aPsk,
-                           uint16_t       aPskLength,
-                           const uint8_t *aPskIdentity,
-                           uint16_t       aPskIdLength)
-{
 #ifdef MBEDTLS_KEY_EXCHANGE_PSK_ENABLED
+void otCoapSecureSetPsk(otInstance *   aInstance,
+                        const uint8_t *aPsk,
+                        uint16_t       aPskLength,
+                        const uint8_t *aPskIdentity,
+                        uint16_t       aPskIdLength)
+{
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    if (aPsk == NULL || aPskLength == 0 || aPskIdentity == NULL || aPskIdLength == 0)
-    {
-        return OT_ERROR_INVALID_ARGS;
-    }
+    OT_ASSERT(aPsk != nullptr && aPskLength != 0 && aPskIdentity != nullptr && aPskIdLength != 0);
 
-    return instance.GetApplicationCoapSecure().SetPreSharedKey(aPsk, aPskLength, aPskIdentity, aPskIdLength);
-#else
-    OT_UNUSED_VARIABLE(aInstance);
-    OT_UNUSED_VARIABLE(aPsk);
-    OT_UNUSED_VARIABLE(aPskLength);
-    OT_UNUSED_VARIABLE(aPskIdentity);
-    OT_UNUSED_VARIABLE(aPskIdLength);
-
-    return OT_ERROR_DISABLED_FEATURE;
-#endif // MBEDTLS_KEY_EXCHANGE_PSK_ENABLED
+    instance.GetApplicationCoapSecure().SetPreSharedKey(aPsk, aPskLength, aPskIdentity, aPskIdLength);
 }
+#endif // MBEDTLS_KEY_EXCHANGE_PSK_ENABLED
 
+#ifdef MBEDTLS_BASE64_C
 otError otCoapSecureGetPeerCertificateBase64(otInstance *   aInstance,
                                              unsigned char *aPeerCert,
-                                             uint64_t *     aCertLength,
-                                             uint64_t       aCertBufferSize)
+                                             size_t *       aCertLength,
+                                             size_t         aCertBufferSize)
 {
-#ifdef MBEDTLS_BASE64_C
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetApplicationCoapSecure().GetPeerCertificateBase64(aPeerCert, (size_t *)aCertLength,
-                                                                        (size_t)aCertBufferSize);
-#else
-    OT_UNUSED_VARIABLE(aInstance);
-    OT_UNUSED_VARIABLE(aPeerCert);
-    OT_UNUSED_VARIABLE(aCertLength);
-    OT_UNUSED_VARIABLE(aCertBufferSize);
-
-    return OT_ERROR_DISABLED_FEATURE;
-#endif // MBEDTLS_BASE64_C
+    return instance.GetApplicationCoapSecure().GetPeerCertificateBase64(aPeerCert, aCertLength, aCertBufferSize);
 }
+#endif // MBEDTLS_BASE64_C
 
 void otCoapSecureSetSslAuthMode(otInstance *aInstance, bool aVerifyPeerCertificate)
 {
@@ -184,28 +144,59 @@ bool otCoapSecureIsConnectionActive(otInstance *aInstance)
     return instance.GetApplicationCoapSecure().IsConnectionActive();
 }
 
-otError otCoapSecureStop(otInstance *aInstance)
+void otCoapSecureStop(otInstance *aInstance)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetApplicationCoapSecure().Stop();
+    instance.GetApplicationCoapSecure().Stop();
 }
+
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+otError otCoapSecureSendRequestBlockWise(otInstance *                aInstance,
+                                         otMessage *                 aMessage,
+                                         otCoapResponseHandler       aHandler,
+                                         void *                      aContext,
+                                         otCoapBlockwiseTransmitHook aTransmitHook,
+                                         otCoapBlockwiseReceiveHook  aReceiveHook)
+{
+    Instance &instance = *static_cast<Instance *>(aInstance);
+
+    return instance.GetApplicationCoapSecure().SendMessage(*static_cast<Coap::Message *>(aMessage), aHandler, aContext,
+                                                           aTransmitHook, aReceiveHook);
+}
+#endif
 
 otError otCoapSecureSendRequest(otInstance *          aInstance,
                                 otMessage *           aMessage,
-                                otCoapResponseHandler aHandler = NULL,
-                                void *                aContext = NULL)
+                                otCoapResponseHandler aHandler,
+                                void *                aContext)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
     return instance.GetApplicationCoapSecure().SendMessage(*static_cast<Coap::Message *>(aMessage), aHandler, aContext);
 }
 
-otError otCoapSecureAddResource(otInstance *aInstance, otCoapResource *aResource)
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+void otCoapSecureAddBlockWiseResource(otInstance *aInstance, otCoapBlockwiseResource *aResource)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetApplicationCoapSecure().AddResource(*static_cast<Coap::Resource *>(aResource));
+    instance.GetApplicationCoapSecure().AddBlockWiseResource(*static_cast<Coap::ResourceBlockWise *>(aResource));
+}
+
+void otCoapSecureRemoveBlockWiseResource(otInstance *aInstance, otCoapBlockwiseResource *aResource)
+{
+    Instance &instance = *static_cast<Instance *>(aInstance);
+
+    instance.GetApplicationCoapSecure().RemoveBlockWiseResource(*static_cast<Coap::ResourceBlockWise *>(aResource));
+}
+#endif
+
+void otCoapSecureAddResource(otInstance *aInstance, otCoapResource *aResource)
+{
+    Instance &instance = *static_cast<Instance *>(aInstance);
+
+    instance.GetApplicationCoapSecure().AddResource(*static_cast<Coap::Resource *>(aResource));
 }
 
 void otCoapSecureRemoveResource(otInstance *aInstance, otCoapResource *aResource)
@@ -231,6 +222,21 @@ void otCoapSecureSetDefaultHandler(otInstance *aInstance, otCoapRequestHandler a
     instance.GetApplicationCoapSecure().SetDefaultHandler(aHandler, aContext);
 }
 
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+otError otCoapSecureSendResponseBlockWise(otInstance *                aInstance,
+                                          otMessage *                 aMessage,
+                                          const otMessageInfo *       aMessageInfo,
+                                          void *                      aContext,
+                                          otCoapBlockwiseTransmitHook aTransmitHook)
+{
+    Instance &instance = *static_cast<Instance *>(aInstance);
+
+    return instance.GetApplicationCoapSecure().SendMessage(*static_cast<Coap::Message *>(aMessage),
+                                                           *static_cast<const Ip6::MessageInfo *>(aMessageInfo),
+                                                           nullptr, aContext, aTransmitHook);
+}
+#endif
+
 otError otCoapSecureSendResponse(otInstance *aInstance, otMessage *aMessage, const otMessageInfo *aMessageInfo)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
@@ -239,4 +245,4 @@ otError otCoapSecureSendResponse(otInstance *aInstance, otMessage *aMessage, con
                                                            *static_cast<const Ip6::MessageInfo *>(aMessageInfo));
 }
 
-#endif // OPENTHREAD_ENABLE_APPLICATION_COAP_SECURE
+#endif // OPENTHREAD_CONFIG_COAP_SECURE_API_ENABLE

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2018, The OpenThread Authors.
 #  All rights reserved.
@@ -27,43 +27,31 @@
 #  POSSIBILITY OF SUCH DAMAGE.
 #
 
-import time
 import unittest
 
 import config
-import mle
-import network_layer
-import node
+import thread_cert
 
 LEADER = 1
 ROUTER = 2
 
 
-class TestCoaps(unittest.TestCase):
+class TestCoaps(thread_cert.TestCase):
+    SUPPORT_NCP = False
 
-    def setUp(self):
-        self.simulator = config.create_default_simulator()
-
-        self.nodes = {}
-        for i in range(1, 3):
-            self.nodes[i] = node.Node(i, simulator=self.simulator)
-
-        self.nodes[LEADER].set_panid(0xface)
-        self.nodes[LEADER].set_mode('rsdn')
-        self.nodes[LEADER].add_whitelist(self.nodes[ROUTER].get_addr64())
-        self.nodes[LEADER].enable_whitelist()
-
-        self.nodes[ROUTER].set_panid(0xface)
-        self.nodes[ROUTER].set_mode('rsdn')
-        self.nodes[ROUTER].add_whitelist(self.nodes[LEADER].get_addr64())
-        self.nodes[ROUTER].enable_whitelist()
-        self.nodes[ROUTER].set_router_selection_jitter(1)
-
-    def tearDown(self):
-        for node in list(self.nodes.values()):
-            node.stop()
-            node.destroy()
-        self.simulator.stop()
+    TOPOLOGY = {
+        LEADER: {
+            'mode': 'rdn',
+            'panid': 0xface,
+            'allowlist': [ROUTER]
+        },
+        ROUTER: {
+            'mode': 'rdn',
+            'panid': 0xface,
+            'router_selection_jitter': 1,
+            'allowlist': [LEADER]
+        },
+    }
 
     def test(self):
         self.nodes[LEADER].start()
@@ -86,13 +74,14 @@ class TestCoaps(unittest.TestCase):
         self.nodes[LEADER].coaps_stop()
 
         self.nodes[LEADER].coaps_start_x509()
-        #self.nodes[LEADER].coaps_set_resource_path('test')
+        # self.nodes[LEADER].coaps_set_resource_path('test')
         self.nodes[ROUTER].coaps_start_x509()
         self.nodes[ROUTER].coaps_connect(mleid)
         self.nodes[ROUTER].coaps_get()
         self.nodes[ROUTER].coaps_disconnect()
         self.nodes[ROUTER].coaps_stop()
         self.nodes[LEADER].coaps_stop()
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -36,6 +36,7 @@
 #include <openthread/udp.h>
 
 #include "common/instance.hpp"
+#include "common/locator-getters.hpp"
 #include "common/new.hpp"
 #include "net/udp6.hpp"
 
@@ -44,65 +45,62 @@ using namespace ot;
 otMessage *otUdpNewMessage(otInstance *aInstance, const otMessageSettings *aSettings)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
-    Message * message;
 
-    if (aSettings != NULL)
-    {
-        VerifyOrExit(aSettings->mPriority <= OT_MESSAGE_PRIORITY_HIGH, message = NULL);
-    }
-
-    message = instance.GetIp6().GetUdp().NewMessage(0, aSettings);
-
-exit:
-    return message;
+    return instance.Get<Ip6::Udp>().NewMessage(0, Message::Settings(aSettings));
 }
 
-otError otUdpOpen(otInstance *aInstance, otUdpSocket *aSocket, otUdpReceive aCallback, void *aCallbackContext)
+otError otUdpOpen(otInstance *aInstance, otUdpSocket *aSocket, otUdpReceive aCallback, void *aContext)
 {
-    otError         error    = OT_ERROR_INVALID_ARGS;
-    Instance &      instance = *static_cast<Instance *>(aInstance);
-    Ip6::UdpSocket &socket   = *new (aSocket) Ip6::UdpSocket(instance.GetIp6().GetUdp());
+    Instance &instance = *static_cast<Instance *>(aInstance);
 
-    error = socket.Open(aCallback, aCallbackContext);
-
-    return error;
+    return instance.Get<Ip6::Udp>().Open(*static_cast<Ip6::Udp::SocketHandle *>(aSocket), aCallback, aContext);
 }
 
-otError otUdpClose(otUdpSocket *aSocket)
+otError otUdpClose(otInstance *aInstance, otUdpSocket *aSocket)
 {
-    otError         error  = OT_ERROR_INVALID_STATE;
-    Ip6::UdpSocket &socket = *static_cast<Ip6::UdpSocket *>(aSocket);
+    Instance &instance = *static_cast<Instance *>(aInstance);
 
-    error = socket.Close();
-
-    return error;
+    return instance.Get<Ip6::Udp>().Close(*static_cast<Ip6::Udp::SocketHandle *>(aSocket));
 }
 
-otError otUdpBind(otUdpSocket *aSocket, otSockAddr *aSockName)
+otError otUdpBind(otInstance *aInstance, otUdpSocket *aSocket, const otSockAddr *aSockName)
 {
-    Ip6::UdpSocket &socket = *static_cast<Ip6::UdpSocket *>(aSocket);
-    return socket.Bind(*static_cast<const Ip6::SockAddr *>(aSockName));
+    Instance &instance = *static_cast<Instance *>(aInstance);
+
+    return instance.Get<Ip6::Udp>().Bind(*static_cast<Ip6::Udp::SocketHandle *>(aSocket),
+                                         *static_cast<const Ip6::SockAddr *>(aSockName));
 }
 
-otError otUdpConnect(otUdpSocket *aSocket, otSockAddr *aSockName)
+otError otUdpConnect(otInstance *aInstance, otUdpSocket *aSocket, const otSockAddr *aSockName)
 {
-    Ip6::UdpSocket &socket = *static_cast<Ip6::UdpSocket *>(aSocket);
-    return socket.Connect(*static_cast<const Ip6::SockAddr *>(aSockName));
+    Instance &instance = *static_cast<Instance *>(aInstance);
+
+    return instance.Get<Ip6::Udp>().Connect(*static_cast<Ip6::Udp::SocketHandle *>(aSocket),
+                                            *static_cast<const Ip6::SockAddr *>(aSockName));
 }
 
-otError otUdpSend(otUdpSocket *aSocket, otMessage *aMessage, const otMessageInfo *aMessageInfo)
+otError otUdpSend(otInstance *aInstance, otUdpSocket *aSocket, otMessage *aMessage, const otMessageInfo *aMessageInfo)
 {
-    Ip6::UdpSocket &socket = *static_cast<Ip6::UdpSocket *>(aSocket);
-    return socket.SendTo(*static_cast<Message *>(aMessage), *static_cast<const Ip6::MessageInfo *>(aMessageInfo));
+    Instance &instance = *static_cast<Instance *>(aInstance);
+
+    return instance.Get<Ip6::Udp>().SendTo(*static_cast<Ip6::Udp::SocketHandle *>(aSocket),
+                                           *static_cast<Message *>(aMessage),
+                                           *static_cast<const Ip6::MessageInfo *>(aMessageInfo));
 }
 
-#if OPENTHREAD_ENABLE_UDP_FORWARD
+otUdpSocket *otUdpGetSockets(otInstance *aInstance)
+{
+    Instance &instance = *static_cast<Instance *>(aInstance);
+
+    return instance.Get<Ip6::Udp>().GetUdpSockets();
+}
+
+#if OPENTHREAD_CONFIG_UDP_FORWARD_ENABLE
 void otUdpForwardSetForwarder(otInstance *aInstance, otUdpForwarder aForwarder, void *aContext)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
-    Ip6::Ip6 &ip6      = instance.Get<Ip6::Ip6>();
 
-    ip6.GetUdp().SetUdpForwarder(aForwarder, aContext);
+    instance.Get<Ip6::Udp>().SetUdpForwarder(aForwarder, aContext);
 }
 
 void otUdpForwardReceive(otInstance *        aInstance,
@@ -113,41 +111,39 @@ void otUdpForwardReceive(otInstance *        aInstance,
 {
     Ip6::MessageInfo messageInfo;
     Instance &       instance = *static_cast<Instance *>(aInstance);
-    Ip6::Ip6 &       ip6      = instance.Get<Ip6::Ip6>();
 
-    assert(aMessage != NULL && aPeerAddr != NULL);
+    OT_ASSERT(aMessage != nullptr && aPeerAddr != nullptr);
 
-    messageInfo.SetSockAddr(instance.GetThreadNetif().GetMle().GetMeshLocal16());
+    messageInfo.SetSockAddr(instance.Get<Mle::MleRouter>().GetMeshLocal16());
     messageInfo.SetSockPort(aSockPort);
     messageInfo.SetPeerAddr(*static_cast<const ot::Ip6::Address *>(aPeerAddr));
     messageInfo.SetPeerPort(aPeerPort);
-    messageInfo.SetInterfaceId(OT_NETIF_INTERFACE_ID_HOST);
+    messageInfo.SetIsHostInterface(true);
 
-    ip6.GetUdp().HandlePayload(*static_cast<ot::Message *>(aMessage), messageInfo);
+    instance.Get<Ip6::Udp>().HandlePayload(*static_cast<ot::Message *>(aMessage), messageInfo);
 
     static_cast<ot::Message *>(aMessage)->Free();
 }
-#endif // OPENTHREAD_ENABLE_UDP_FORWARD
-
-#if OPENTHREAD_ENABLE_PLATFORM_UDP
-otUdpSocket *otUdpGetSockets(otInstance *aInstance)
-{
-    Instance &instance = *static_cast<Instance *>(aInstance);
-
-    return instance.Get<Ip6::Ip6>().GetUdp().GetUdpSockets();
-}
-#endif
+#endif // OPENTHREAD_CONFIG_UDP_FORWARD_ENABLE
 
 otError otUdpAddReceiver(otInstance *aInstance, otUdpReceiver *aUdpReceiver)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetIp6().GetUdp().AddReceiver(*static_cast<Ip6::UdpReceiver *>(aUdpReceiver));
+    return instance.Get<Ip6::Udp>().AddReceiver(*static_cast<Ip6::Udp::Receiver *>(aUdpReceiver));
 }
 
 otError otUdpRemoveReceiver(otInstance *aInstance, otUdpReceiver *aUdpReceiver)
 {
     Instance &instance = *static_cast<Instance *>(aInstance);
 
-    return instance.GetIp6().GetUdp().RemoveReceiver(*static_cast<Ip6::UdpReceiver *>(aUdpReceiver));
+    return instance.Get<Ip6::Udp>().RemoveReceiver(*static_cast<Ip6::Udp::Receiver *>(aUdpReceiver));
+}
+
+otError otUdpSendDatagram(otInstance *aInstance, otMessage *aMessage, otMessageInfo *aMessageInfo)
+{
+    Instance &instance = *static_cast<Instance *>(aInstance);
+
+    return instance.Get<Ip6::Udp>().SendDatagram(*static_cast<ot::Message *>(aMessage),
+                                                 *static_cast<Ip6::MessageInfo *>(aMessageInfo), Ip6::kProtoUdp);
 }

@@ -37,25 +37,26 @@
 
 #include "common/code_utils.hpp"
 #include "common/debug.hpp"
+#include "common/locator-getters.hpp"
 #include "crypto/aes_ccm.hpp"
 #include "crypto/ecdsa.hpp"
 #include "crypto/hmac_sha256.hpp"
 
 using namespace ot::Crypto;
 
-void otCryptoHmacSha256(const uint8_t *aKey,
-                        uint16_t       aKeyLength,
-                        const uint8_t *aBuf,
-                        uint16_t       aBufLength,
-                        uint8_t *      aHash)
+void otCryptoHmacSha256(const uint8_t *     aKey,
+                        uint16_t            aKeyLength,
+                        const uint8_t *     aBuf,
+                        uint16_t            aBufLength,
+                        otCryptoSha256Hash *aHash)
 {
     HmacSha256 hmac;
 
-    assert((aKey != NULL) && (aBuf != NULL) && (aHash != NULL));
+    OT_ASSERT((aKey != nullptr) && (aBuf != nullptr) && (aHash != nullptr));
 
     hmac.Start(aKey, aKeyLength);
     hmac.Update(aBuf, aBufLength);
-    hmac.Finish(aHash);
+    hmac.Finish(*static_cast<HmacSha256::Hash *>(aHash));
 }
 
 void otCryptoAesCcm(const uint8_t *aKey,
@@ -71,30 +72,25 @@ void otCryptoAesCcm(const uint8_t *aKey,
                     bool           aEncrypt,
                     void *         aTag)
 {
-    AesCcm  aesCcm;
-    uint8_t tagLength;
+    AesCcm aesCcm;
 
-    assert((aKey != NULL) && (aNonce != NULL) && (aPlainText != NULL) && (aCipherText != NULL) && (aTag != NULL));
+    OT_ASSERT((aKey != nullptr) && (aNonce != nullptr) && (aPlainText != nullptr) && (aCipherText != nullptr) &&
+              (aTag != nullptr));
 
     aesCcm.SetKey(aKey, aKeyLength);
-    SuccessOrExit(aesCcm.Init(aHeaderLength, aLength, aTagLength, aNonce, aNonceLength));
+    aesCcm.Init(aHeaderLength, aLength, aTagLength, aNonce, aNonceLength);
 
     if (aHeaderLength != 0)
     {
-        assert(aHeader != NULL);
+        OT_ASSERT(aHeader != nullptr);
         aesCcm.Header(aHeader, aHeaderLength);
     }
 
-    aesCcm.Payload(aPlainText, aCipherText, aLength, aEncrypt);
-    aesCcm.Finalize(aTag, &tagLength);
-
-    assert(aTagLength == tagLength);
-
-exit:
-    return;
+    aesCcm.Payload(aPlainText, aCipherText, aLength, aEncrypt ? AesCcm::kEncrypt : AesCcm::kDecrypt);
+    aesCcm.Finalize(aTag);
 }
 
-#if OPENTHREAD_ENABLE_ECDSA
+#if OPENTHREAD_CONFIG_ECDSA_ENABLE
 
 otError otCryptoEcdsaSign(uint8_t *      aOutput,
                           uint16_t *     aOutputLength,
@@ -103,7 +99,7 @@ otError otCryptoEcdsaSign(uint8_t *      aOutput,
                           const uint8_t *aPrivateKey,
                           uint16_t       aPrivateKeyLength)
 {
-    return Ecdsa::Sign(aOutput, aOutputLength, aInputHash, aInputHashLength, aPrivateKey, aPrivateKeyLength);
+    return Ecdsa::Sign(aOutput, *aOutputLength, aInputHash, aInputHashLength, aPrivateKey, aPrivateKeyLength);
 }
 
-#endif // OPENTHREAD_ENABLE_ECDSA
+#endif // OPENTHREAD_CONFIG_ECDSA_ENABLE

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2018, The OpenThread Authors.
 #  All rights reserved.
@@ -26,11 +26,10 @@
 #  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 #  POSSIBILITY OF SUCH DAMAGE.
 
-import time
 import wpan
 from wpan import verify
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test description: Router table
 #
 # Verify router table entries on a network with 4 routers:
@@ -38,10 +37,10 @@ from wpan import verify
 #
 
 test_name = __file__[:-3] if __file__.endswith('.py') else __file__
-print '-' * 120
-print 'Starting \'{}\''.format(test_name)
+print('-' * 120)
+print('Starting \'{}\''.format(test_name))
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Creating `wpan.Nodes` instances
 
 speedup = 4
@@ -53,12 +52,12 @@ r3 = wpan.Node()
 r4 = wpan.Node()
 c4 = wpan.Node()
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Init all nodes
 
 wpan.Node.init_all_nodes()
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Build network topology
 #
 #
@@ -72,28 +71,28 @@ wpan.Node.init_all_nodes()
 
 r1.form("route-table")
 
-r1.whitelist_node(r2)
-r2.whitelist_node(r1)
+r1.allowlist_node(r2)
+r2.allowlist_node(r1)
 r2.join_node(r1, wpan.JOIN_TYPE_ROUTER)
 
-r2.whitelist_node(r3)
-r3.whitelist_node(r2)
+r2.allowlist_node(r3)
+r3.allowlist_node(r2)
 r3.join_node(r2, wpan.JOIN_TYPE_ROUTER)
 
-r3.whitelist_node(r1)
-r1.whitelist_node(r3)
+r3.allowlist_node(r1)
+r1.allowlist_node(r3)
 
-r3.whitelist_node(r4)
-r4.whitelist_node(r3)
+r3.allowlist_node(r4)
+r4.allowlist_node(r3)
 r4.join_node(r3, wpan.JOIN_TYPE_ROUTER)
 
 # c4 is attached to r4 so that it quickly gets promoted to a router role.
-c4.whitelist_node(r4)
-r4.whitelist_node(c4)
+c4.allowlist_node(r4)
+r4.allowlist_node(c4)
 c4.join_node(r4, wpan.JOIN_TYPE_SLEEPY_END_DEVICE)
 c4.set(wpan.WPAN_POLL_INTERVAL, '2000')
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test implementation
 #
 
@@ -121,6 +120,7 @@ WAIT_TIME = 30 / speedup + 5
 
 INVALID_ROUTER_ID = 63
 
+
 def check_r1_router_table():
     router_table = wpan.parse_router_table_result(r1.get(wpan.WPAN_THREAD_ROUTER_TABLE))
     verify(len(router_table) == 4)
@@ -137,12 +137,14 @@ def check_r1_router_table():
             verify(entry.ext_address == r3_ext_addr)
         elif entry.rloc16 == r4_rloc:
             # r1's next hop towards r4 should be through r3.
-            verify(not entry.is_link_established());
+            verify(not entry.is_link_established())
             verify(entry.next_hop == r3_id)
         else:
-            raise(wpan.VerifyError("unknown entry in the router table of r1"))
+            raise (wpan.VerifyError("unknown entry in the router table of r1"))
+
 
 wpan.verify_within(check_r1_router_table, WAIT_TIME)
+
 
 def check_r3_router_table():
     router_table = wpan.parse_router_table_result(r3.get(wpan.WPAN_THREAD_ROUTER_TABLE))
@@ -160,12 +162,14 @@ def check_r3_router_table():
             pass
         elif entry.rloc16 == r4_rloc:
             # r3 should be directly connected to r4.
-            verify(entry.is_link_established());
+            verify(entry.is_link_established())
             verify(entry.ext_address == r4_ext_addr)
         else:
-            raise(wpan.VerifyError("unknown entry in the router table of r3"))
+            raise (wpan.VerifyError("unknown entry in the router table of r3"))
+
 
 wpan.verify_within(check_r3_router_table, WAIT_TIME)
+
 
 def check_r4_router_table():
     router_table = wpan.parse_router_table_result(r4.get(wpan.WPAN_THREAD_ROUTER_TABLE))
@@ -177,7 +181,7 @@ def check_r4_router_table():
             verify(entry.next_hop == r3_id)
         elif entry.rloc16 == r2_rloc:
             # r4's next hop towards r2 should be through r3.
-            verify(not entry.is_link_established());
+            verify(not entry.is_link_established())
             verify(entry.next_hop == r3_id)
         elif entry.rloc16 == r3_rloc:
             # r4 should be directly connected to r3.
@@ -186,13 +190,14 @@ def check_r4_router_table():
         elif entry.rloc16 == r4_rloc:
             pass
         else:
-            raise(wpan.VerifyError("unknown entry in the router table of r4"))
+            raise (wpan.VerifyError("unknown entry in the router table of r4"))
+
 
 wpan.verify_within(check_r4_router_table, WAIT_TIME)
 
-#-----------------------------------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------------------------------
 # Test finished
 
 wpan.Node.finalize_all_nodes()
 
-print '\'{}\' passed.'.format(test_name)
+print('\'{}\' passed.'.format(test_name))

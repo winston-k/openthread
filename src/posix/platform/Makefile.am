@@ -27,61 +27,63 @@
 #
 
 include $(abs_top_nlbuild_autotools_dir)/automake/pre.am
+include $(top_srcdir)/src/lib/common.am
 
 lib_LIBRARIES                             = libopenthread-posix.a
 
-libopenthread_posix_a_CPPFLAGS            = \
-    -I$(top_srcdir)/include                 \
-    -I$(top_srcdir)/src/core                \
-    -I$(top_srcdir)/src/ncp                 \
-    -I$(top_srcdir)/src/posix/platform      \
-    -D_GNU_SOURCE                           \
-    $(OPENTHREAD_TARGET_DEFINES)            \
+libopenthread_posix_a_CPPFLAGS                                = \
+    -I$(top_srcdir)/include                                     \
+    -I$(top_srcdir)/src                                         \
+    -I$(top_srcdir)/src/core                                    \
+    -I$(top_srcdir)/src/posix/platform                          \
+    -I$(top_srcdir)/src/posix/platform/include                  \
+    -D_GNU_SOURCE                                               \
+    -DOPENTHREAD_FTD=1                                          \
+    -DOPENTHREAD_MTD=0                                          \
+    -DOPENTHREAD_RADIO=0                                        \
     $(NULL)
 
 libopenthread_posix_a_SOURCES             = \
-    alarm.c                                 \
+    alarm.cpp                               \
+    backbone.cpp                            \
+    entropy.cpp                             \
     hdlc_interface.cpp                      \
-    logging.c                               \
-    misc.c                                  \
+    infra_if.cpp                            \
+    logging.cpp                             \
+    memory.cpp                              \
+    misc.cpp                                \
+    multicast_routing.cpp                   \
     netif.cpp                               \
-    radio_spinel.cpp                        \
-    random.c                                \
+    radio.cpp                               \
+    radio_url.cpp                           \
     settings.cpp                            \
-    sim.c                                   \
-    system.c                                \
-    uart.c                                  \
-    $(NULL)
-
-INC_NCP_SOURCES                           = \
-    inc_spinel.c                            \
-    inc_hdlc.cpp                            \
-    $(NULL)
-
-nodist_libopenthread_posix_a_SOURCES      = \
-    $(INC_NCP_SOURCES)                      \
-    $(NULL)
-
-inc_%: ../../ncp/%
-	echo '#include "$<"' > $@
-
-if OPENTHREAD_ENABLE_PLATFORM_UDP
-libopenthread_posix_a_SOURCES            += \
+    spi_interface.cpp                       \
+    system.cpp                              \
+    trel_udp6.cpp                           \
+    uart.cpp                                \
     udp.cpp                                 \
+    virtual_time.cpp                        \
     $(NULL)
-endif
+
+libopenthread_posix_a_LIBADD                                                        = \
+    $(call ot_list_objects,$(top_builddir)/src/lib/url/libopenthread-url.a)           \
+    $(call ot_list_objects,$(top_builddir)/src/lib/platform/libopenthread-platform.a) \
+    $(NULL)
 
 noinst_HEADERS                            = \
-    openthread-system.h                     \
-    platform-posix.h                        \
     hdlc_interface.hpp                      \
-    radio_spinel.hpp                        \
+    multicast_routing.hpp                   \
+    openthread-posix-config.h               \
+    platform-posix.h                        \
+    radio_url.hpp                           \
     $(NULL)
 
-PRETTY_FILES                              = \
-    $(libopenthread_posix_a_SOURCES)        \
-    $(noinst_HEADERS)                       \
+openthread_HEADERS                        = \
+    include/openthread/openthread-system.h  \
     $(NULL)
+
+openthreaddir = $(includedir)/openthread
+dist_openthread_HEADERS = $(openthread_headers)
 
 if OPENTHREAD_BUILD_COVERAGE
 CLEANFILES                                = $(wildcard *.gcda *.gcno)
@@ -89,10 +91,13 @@ endif # OPENTHREAD_BUILD_COVERAGE
 
 check_PROGRAMS = test-settings
 
-test_settings_CPPFLAGS                    = \
-    -I$(top_srcdir)/include                 \
-    -I$(top_srcdir)/src/core                \
-    -DSELF_TEST                             \
+test_settings_CPPFLAGS                                        = \
+    -I$(top_srcdir)/include                                     \
+    -I$(top_srcdir)/src                                         \
+    -I$(top_srcdir)/src/core                                    \
+    -I$(top_srcdir)/src/posix/platform/include                  \
+    -DOPENTHREAD_CONFIG_LOG_PLATFORM=0                          \
+    -DSELF_TEST                                                 \
     $(NULL)
 
 test_settings_SOURCES                     = \

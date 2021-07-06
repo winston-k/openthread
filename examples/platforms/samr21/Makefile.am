@@ -33,6 +33,14 @@ lib_LIBRARIES = libopenthread-samr21.a
 override CFLAGS                              := $(filter-out -pedantic-errors,$(CFLAGS))
 override CXXFLAGS                            := $(filter-out -pedantic-errors,$(CXXFLAGS))
 
+# Do not enable -Wundef for this platform
+override CFLAGS                              := $(filter-out -Wundef,$(CFLAGS))
+override CXXFLAGS                            := $(filter-out -Wundef,$(CXXFLAGS))
+
+# Do not enable -Wcast-align for this platform
+override CFLAGS                              := $(filter-out -Wcast-align,$(CFLAGS))
+override CXXFLAGS                            := $(filter-out -Wcast-align,$(CXXFLAGS))
+
 libopenthread_samr21_a_CPPFLAGS                                                                              = \
     -D ARM_MATH_CM0PLUS=true                                                                                   \
     -D PHY_AT86RF233                                                                                           \
@@ -89,15 +97,19 @@ libopenthread_samr21_a_CPPFLAGS                                                 
 PLATFORM_SOURCES                                                                                             = \
     crypto/aes_alt.c                                                                                           \
     alarm.c                                                                                                    \
-    diag.c                                                                                                     \
     cxx_helpers.c                                                                                              \
+    diag.c                                                                                                     \
+    entropy.c                                                                                                  \
     flash.c                                                                                                    \
     logging.c                                                                                                  \
     misc.c                                                                                                     \
+    openthread-core-samr21-config.h                                                                            \
+    openthread-core-samr21-config-check.h                                                                      \
+    platform-samr21.h                                                                                          \
     radio.c                                                                                                    \
-    random.c                                                                                                   \
     system.c                                                                                                   \
     uart.c                                                                                                     \
+    user_row.h                                                                                                 \
     $(NULL)
 
 libopenthread_samr21_a_SOURCES                                                                               = \
@@ -127,13 +139,6 @@ nodist_libopenthread_samr21_a_SOURCES                                           
     @top_builddir@/third_party/microchip/asf/thirdparty/wireless/avr2130_lwmesh/source/phy/at86rf233/src/phy.c \
     @top_builddir@/third_party/microchip/asf/thirdparty/wireless/services/sal/at86rf2xx/src/sal.c              \
     @top_builddir@/third_party/microchip/asf/thirdparty/wireless/services/trx_access/trx_access.c              \
-    $(NULL)
-
-noinst_HEADERS                                                                                               = \
-    $(NULL)
-
-PRETTY_FILES                                                                                                 = \
-    $(PLATFORM_SOURCES)                                                                                        \
     $(NULL)
 
 Dash                                                                                                         = -

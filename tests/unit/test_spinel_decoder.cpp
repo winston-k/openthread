@@ -26,67 +26,24 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <ctype.h>
-
 #include "common/code_utils.hpp"
 #include "common/instance.hpp"
-#include "ncp/spinel_decoder.hpp"
+#include "lib/spinel/spinel_decoder.hpp"
 
-#include "test_util.h"
+#include "test_util.hpp"
 
 namespace ot {
-namespace Ncp {
+namespace Spinel {
 
 enum
 {
     kTestBufferSize = 800,
 };
 
-// Dump the buffer content to screen.
-void DumpBuffer(const char *aTextMessage, uint8_t *aBuffer, uint16_t aBufferLength)
+void TestDecoder(void)
 {
-    enum
-    {
-        kBytesPerLine = 32, // Number of bytes per line.
-    };
-
-    char     charBuff[kBytesPerLine + 1];
-    uint16_t counter;
-    uint8_t  byte;
-
-    printf("\n%s - len = %u\n    ", aTextMessage, aBufferLength);
-
-    counter = 0;
-
-    while (aBufferLength--)
-    {
-        byte = *aBuffer++;
-        printf("%02X ", byte);
-        charBuff[counter] = isprint(byte) ? static_cast<char>(byte) : '.';
-        counter++;
-
-        if (counter == kBytesPerLine)
-        {
-            charBuff[counter] = 0;
-            printf("    %s\n    ", charBuff);
-            counter = 0;
-        }
-    }
-
-    charBuff[counter] = 0;
-
-    while (counter++ < kBytesPerLine)
-    {
-        printf("   ");
-    }
-
-    printf("    %s\n", charBuff);
-}
-
-void TestSpinelDecoder(void)
-{
-    uint8_t       buffer[kTestBufferSize];
-    SpinelDecoder decoder;
+    uint8_t         buffer[kTestBufferSize];
+    Spinel::Decoder decoder;
 
     spinel_ssize_t frameLen;
 
@@ -155,7 +112,7 @@ void TestSpinelDecoder(void)
                      SPINEL_DATATYPE_UINT_PACKED_S SPINEL_DATATYPE_UINT_PACKED_S SPINEL_DATATYPE_UINT_PACKED_S
                          SPINEL_DATATYPE_IPv6ADDR_S SPINEL_DATATYPE_EUI48_S SPINEL_DATATYPE_EUI64_S
                              SPINEL_DATATYPE_UTF8_S SPINEL_DATATYPE_UTF8_S SPINEL_DATATYPE_DATA_WLEN_S
-                                                                           SPINEL_DATATYPE_DATA_S),
+                                 SPINEL_DATATYPE_DATA_S),
         kBool_1, kBool_2, kUint8, kInt8, kUint16, kInt16, kUint32, kInt32, kUint64, kInt64, kUint_1, kUint_2, kUint_3,
         kUint_4, &kIp6Addr, &kEui48, &kEui64, kString_1, kString_2, kData, sizeof(kData), kData, sizeof(kData));
 
@@ -637,7 +594,7 @@ void TestSpinelDecoder(void)
         SuccessOrQuit(decoder.CloseStruct(), "CloseStruct() failed.");
         SuccessOrQuit(decoder.ReadUint16(u16), "ReadUint16() failed.");
 
-        // `ResetToSaved()` should fail sicne the enclosing struct for the saved position is closed.
+        // `ResetToSaved()` should fail since the enclosing struct for the saved position is closed.
         VerifyOrQuit(decoder.ResetToSaved() == OT_ERROR_INVALID_STATE, "ResetToSaved() did not fail.");
     }
 
@@ -648,7 +605,7 @@ void TestSpinelDecoder(void)
 
     frameLen = spinel_datatype_pack(buffer, sizeof(buffer),
                                     (SPINEL_DATATYPE_UINT8_S SPINEL_DATATYPE_UINT16_S // Treat this as struct length
-                                                             SPINEL_DATATYPE_BOOL_S),
+                                         SPINEL_DATATYPE_BOOL_S),
                                     kUint8, 10, kBool_1);
 
     DumpBuffer("Packed Spinel Frame (incorrect format)", buffer, static_cast<uint16_t>(frameLen));
@@ -664,13 +621,13 @@ void TestSpinelDecoder(void)
     // bytes in the frame.
     VerifyOrQuit(decoder.OpenStruct() == OT_ERROR_PARSE, "OpenStruct() did not fail.");
 
-    decoder.ResetToSaved();
+    SuccessOrQuit(decoder.ResetToSaved(), "ResetToSaved() failed.");
 
     SuccessOrQuit(decoder.ReadUint8(u8), "ReadUint8() failed.");
     VerifyOrQuit(u8 == kUint8, "ReadUint8() parse failed.");
     VerifyOrQuit(decoder.ReadDataWithLen(dataPtr_1, dataLen_1) == OT_ERROR_PARSE, "ReadDataWithLen() did not fail.");
 
-    decoder.ResetToSaved();
+    SuccessOrQuit(decoder.ResetToSaved(), "ResetToSaved() failed.");
     SuccessOrQuit(decoder.ReadUint8(u8), "ReadUint8() failed.");
     SuccessOrQuit(decoder.ReadUint16(u16), "ReadUint16() failed.");
     SuccessOrQuit(decoder.ReadBool(b_1), "ReadUint16() failed.");
@@ -681,14 +638,12 @@ void TestSpinelDecoder(void)
     printf(" -- PASS\n");
 }
 
-} // namespace Ncp
+} // namespace Spinel
 } // namespace ot
 
-#ifdef ENABLE_TEST_MAIN
 int main(void)
 {
-    ot::Ncp::TestSpinelDecoder();
+    ot::Spinel::Decoder();
     printf("\nAll tests passed.\n");
     return 0;
 }
-#endif

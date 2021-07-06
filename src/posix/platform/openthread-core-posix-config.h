@@ -35,21 +35,185 @@
 #define OPENTHREAD_CORE_POSIX_CONFIG_H_
 
 /**
+ * @def OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS
+ *
+ * The number of message buffers in the buffer pool.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS
+#define OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS 256
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_LOG_PLATFORM
+ *
+ * Define to enable platform region logging.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_LOG_PLATFORM
+#define OPENTHREAD_CONFIG_LOG_PLATFORM 1
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_LOG_OUTPUT
+ *
+ * Select the log output.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_LOG_OUTPUT
+#define OPENTHREAD_CONFIG_LOG_OUTPUT OPENTHREAD_CONFIG_LOG_OUTPUT_PLATFORM_DEFINED
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_LOG_LEVEL_DYNAMIC_ENABLE
+ *
+ * Define as 1 to enable dynamic log level control.
+ *
+ * Note that the OPENTHREAD_CONFIG_LOG_LEVEL determines the log level at
+ * compile time. The dynamic log level control (if enabled) only allows
+ * decreasing the log level from the compile time value.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_LOG_LEVEL_DYNAMIC_ENABLE
+#define OPENTHREAD_CONFIG_LOG_LEVEL_DYNAMIC_ENABLE 1
+#endif
+
+/**
  * @def OPENTHREAD_CONFIG_PLATFORM_INFO
  *
  * The platform-specific string to insert into the OpenThread version string.
  *
  */
-#define OPENTHREAD_CONFIG_PLATFORM_INFO "POSIX-APP"
+#define OPENTHREAD_CONFIG_PLATFORM_INFO "POSIX"
 
 /**
- * @def OPENTHREAD_CONFIG_ENABLE_SLAAC
+ * @def OPENTHREAD_CONFIG_IP6_SLAAC_ENABLE
  *
  * Define as 1 to enable support for adding of auto-configured SLAAC addresses by OpenThread.
  *
  */
-#ifndef OPENTHREAD_CONFIG_ENABLE_SLAAC /* allows command line override */
-#define OPENTHREAD_CONFIG_ENABLE_SLAAC 1
+#ifndef OPENTHREAD_CONFIG_IP6_SLAAC_ENABLE /* allows command line override */
+#define OPENTHREAD_CONFIG_IP6_SLAAC_ENABLE 1
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_NCP_UART_ENABLE
+ *
+ * Define to 1 to enable NCP UART support.
+ *
+ */
+#define OPENTHREAD_CONFIG_NCP_UART_ENABLE 1
+
+/**
+ * @def OPENTHREAD_CONFIG_PLATFORM_RADIO_COEX_ENABLE
+ *
+ * Define to 1 if you want to enable radio coexistence implemented in platform.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_PLATFORM_RADIO_COEX_ENABLE
+#define OPENTHREAD_CONFIG_PLATFORM_RADIO_COEX_ENABLE 1
+#endif
+
+#if OPENTHREAD_POSIX_CONFIG_DAEMON_ENABLE
+
+#ifndef OPENTHREAD_CONFIG_PLATFORM_NETIF_ENABLE
+#define OPENTHREAD_CONFIG_PLATFORM_NETIF_ENABLE 1
+#endif
+
+#ifndef OPENTHREAD_CONFIG_PLATFORM_UDP_ENABLE
+#define OPENTHREAD_CONFIG_PLATFORM_UDP_ENABLE 1
+#endif
+
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_LOG_MAX_SIZE
+ *
+ * The maximum log string size (number of chars).
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_LOG_MAX_SIZE
+#define OPENTHREAD_CONFIG_LOG_MAX_SIZE 1024
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_COMMISSIONER_MAX_JOINER_ENTRIES
+ *
+ * The maximum number of Joiner entries maintained by the Commissioner.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_COMMISSIONER_MAX_JOINER_ENTRIES
+#define OPENTHREAD_CONFIG_COMMISSIONER_MAX_JOINER_ENTRIES 4
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_TMF_ADDRESS_CACHE_ENTRIES
+ *
+ * The number of EID-to-RLOC cache entries.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_TMF_ADDRESS_CACHE_ENTRIES
+#define OPENTHREAD_CONFIG_TMF_ADDRESS_CACHE_ENTRIES 32
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_MLE_MAX_CHILDREN
+ *
+ * The maximum number of children.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_MLE_MAX_CHILDREN
+#define OPENTHREAD_CONFIG_MLE_MAX_CHILDREN 64
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_MLE_IP_ADDRS_PER_CHILD
+ *
+ * The maximum number of supported IPv6 address registrations per child.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_MLE_IP_ADDRS_PER_CHILD
+#define OPENTHREAD_CONFIG_MLE_IP_ADDRS_PER_CHILD 16
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_IP6_MAX_EXT_UCAST_ADDRS
+ *
+ * The maximum number of supported IPv6 addresses allows to be externally added.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_IP6_MAX_EXT_UCAST_ADDRS
+#define OPENTHREAD_CONFIG_IP6_MAX_EXT_UCAST_ADDRS 8
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_IP6_MAX_EXT_MCAST_ADDRS
+ *
+ * The maximum number of supported IPv6 multicast addresses allows to be externally added.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_IP6_MAX_EXT_MCAST_ADDRS
+#define OPENTHREAD_CONFIG_IP6_MAX_EXT_MCAST_ADDRS 8
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_HEAP_INTERNAL_SIZE
+ *
+ * The size of heap buffer when DTLS is enabled.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_HEAP_INTERNAL_SIZE
+#define OPENTHREAD_CONFIG_HEAP_INTERNAL_SIZE (63 * 1024)
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_HEAP_INTERNAL_SIZE_NO_DTLS
+ *
+ * The size of heap buffer when DTLS is disabled.
+ *
+ */
+#ifndef OPENTHREAD_CONFIG_HEAP_INTERNAL_SIZE_NO_DTLS
+#define OPENTHREAD_CONFIG_HEAP_INTERNAL_SIZE_NO_DTLS (63 * 1024)
 #endif
 
 #endif // OPENTHREAD_CORE_POSIX_CONFIG_H_

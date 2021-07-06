@@ -36,8 +36,11 @@
 
 #include "openthread-core-config.h"
 
+#include <openthread/netdiag.h>
+
 #include "coap/coap.hpp"
 #include "common/locator.hpp"
+#include "common/non_copyable.hpp"
 #include "net/udp6.hpp"
 #include "thread/network_diagnostic_tlvs.hpp"
 
@@ -58,9 +61,20 @@ namespace NetworkDiagnostic {
  * This class implements the Network Diagnostic processing.
  *
  */
-class NetworkDiagnostic : public InstanceLocator
+class NetworkDiagnostic : public InstanceLocator, private NonCopyable
 {
 public:
+    enum
+    {
+        kIteratorInit = OT_NETWORK_DIAGNOSTIC_ITERATOR_INIT, ///< Initializer value for Iterator.
+    };
+
+    /**
+     * This type represents an iterator used to iterate through Network Diagnostic TLVs from `GetNextDiagTlv()`.
+     *
+     */
+    typedef otNetworkDiagIterator Iterator;
+
     /**
      * This constructor initializes the object.
      *
@@ -68,25 +82,22 @@ public:
     explicit NetworkDiagnostic(Instance &aInstance);
 
     /**
-     * This method registers a callback to provide received raw DIAG_GET.rsp or an DIAG_GET.ans payload.
+     * This method sends Diagnostic Get request. If the @p aDestination is of multicast type, the DIAG_GET.qry
+     * message is sent or the DIAG_GET.req otherwise.
      *
-     * @param[in]  aCallback         A pointer to a function that is called when an DIAG_GET.rsp or an DIAG_GET.ans
+     * @param[in]  aDestination      A reference to the destination address.
+     * @param[in]  aTlvTypes         An array of Network Diagnostic TLV types.
+     * @param[in]  aCount            Number of types in aTlvTypes.
+     * @param[in]  aCallback         A pointer to a function that is called when Network Diagnostic Get response
      *                               is received or NULL to disable the callback.
      * @param[in]  aCallbackContext  A pointer to application-specific context.
      *
      */
-    void SetReceiveDiagnosticGetCallback(otReceiveDiagnosticGetCallback aCallback, void *aCallbackContext);
-
-    /**
-     * This method sends Diagnostic Get request. If the @p aDestination is of multicast type, the DIAG_GET.qry
-     * message is sent or the DIAG_GET.req otherwise.
-     *
-     * @param[in] aDestination  A reference to the destination address.
-     * @param[in] aTlvTypes     An array of Network Diagnostic TLV types.
-     * @param[in] aCount        Number of types in aTlvTypes
-     *
-     */
-    otError SendDiagnosticGet(const Ip6::Address &aDestination, const uint8_t aTlvTypes[], uint8_t aCount);
+    otError SendDiagnosticGet(const Ip6::Address &           aDestination,
+                              const uint8_t                  aTlvTypes[],
+                              uint8_t                        aCount,
+                              otReceiveDiagnosticGetCallback aCallback,
+                              void *                         aCallbackContext);
 
     /**
      * This method sends Diagnostic Reset request.
@@ -98,11 +109,27 @@ public:
      */
     otError SendDiagnosticReset(const Ip6::Address &aDestination, const uint8_t aTlvTypes[], uint8_t aCount);
 
+    /**
+     * This static method gets the next Network Diagnostic TLV in a given message.
+     *
+     * @param[in]     aMessage         A message.
+     * @param[inout]  aIterator        The Network Diagnostic iterator. To get the first TLV set it to `kIteratorInit`.
+     * @param[out]    aNetworkDiagTlv  A reference to a Network Diagnostic TLV to output the next TLV.
+     *
+     * @retval OT_ERROR_NONE       Successfully found the next Network Diagnostic TLV.
+     * @retval OT_ERROR_NOT_FOUND  No subsequent Network Diagnostic TLV exists in the message.
+     * @retval OT_ERROR_PARSE      Parsing the next Network Diagnostic failed.
+     *
+     */
+    static otError GetNextDiagTlv(const Coap::Message &aMessage,
+                                  Iterator &           aIterator,
+                                  otNetworkDiagTlv &   aNetworkDiagTlv);
+
 private:
     otError AppendIp6AddressList(Message &aMessage);
     otError AppendChildTable(Message &aMessage);
     void    FillMacCountersTlv(MacCountersTlv &aMacCountersTlv);
-    otError FillRequestedTlvs(Message &aRequest, Message &aResponse, NetworkDiagnosticTlv &aNetworkDiagnosticTlv);
+    otError FillRequestedTlvs(const Message &aRequest, Message &aResponse, NetworkDiagnosticTlv &aNetworkDiagnosticTlv);
 
     static void HandleDiagnosticGetRequest(void *aContext, otMessage *aMessage, const otMessageInfo *aMessageInfo);
     void        HandleDiagnosticGetRequest(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
@@ -114,7 +141,7 @@ private:
                                             otMessage *          aMessage,
                                             const otMessageInfo *aMessageInfo,
                                             otError              aResult);
-    void HandleDiagnosticGetResponse(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo, otError aResult);
+    void HandleDiagnosticGetResponse(Coap::Message *aMessage, const Ip6::MessageInfo *aMessageInfo, otError aResult);
 
     static void HandleDiagnosticGetAnswer(void *aContext, otMessage *aMessage, const otMessageInfo *aMessageInfo);
     void        HandleDiagnosticGetAnswer(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo);

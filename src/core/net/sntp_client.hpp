@@ -34,6 +34,7 @@
 #include <openthread/sntp.h>
 
 #include "common/message.hpp"
+#include "common/non_copyable.hpp"
 #include "common/timer.hpp"
 #include "net/ip6.hpp"
 #include "net/netif.hpp"
@@ -45,6 +46,8 @@
 
 namespace ot {
 namespace Sntp {
+
+using ot::Encoding::BigEndian::HostSwap32;
 
 /**
  * This class implements SNTP header generation and parsing.
@@ -58,13 +61,7 @@ public:
      * Default constructor for SNTP Header.
      *
      */
-    Header(void)
-    {
-        memset(this, 0, sizeof(*this));
-
-        // Set default value of flags field.
-        SetFlags(kNtpVersion << kVersionOffset | kModeClient << kModeOffset);
-    }
+    Header(void);
 
     /**
      * Defines supported SNTP modes.
@@ -160,15 +157,15 @@ public:
     /**
      * This method returns the root delay field value.
      *
-     * @returns Value of the the root delay field.
+     * @returns Value of the root delay field.
      *
      */
     uint32_t GetRootDelay(void) const { return HostSwap32(mRootDelay); }
 
     /**
-     * This method sets the the root delay field.
+     * This method sets the root delay field.
      *
-     * @param[in]  aRootDelay  The value of the the root delay field.
+     * @param[in]  aRootDelay  The value of the root delay field.
      *
      */
     void SetRootDelay(uint32_t aRootDelay) { mRootDelay = HostSwap32(aRootDelay); }
@@ -176,15 +173,15 @@ public:
     /**
      * This method returns the root dispersion field value.
      *
-     * @returns Value of the the root dispersion field.
+     * @returns Value of the root dispersion field.
      *
      */
     uint32_t GetRootDispersion(void) const { return HostSwap32(mRootDispersion); }
 
     /**
-     * This method sets the the root dispersion field.
+     * This method sets the root dispersion field.
      *
-     * @param[in]  aRootDispersion  The value of the the root dispersion field.
+     * @param[in]  aRootDispersion  The value of the root dispersion field.
      *
      */
     void SetRootDispersion(uint32_t aRootDispersion) { mRootDispersion = HostSwap32(aRootDispersion); }
@@ -192,15 +189,15 @@ public:
     /**
      * This method returns the reference identifier field value.
      *
-     * @returns Value of the the reference identifier field.
+     * @returns Value of the reference identifier field.
      *
      */
     uint32_t GetReferenceId(void) const { return HostSwap32(mReferenceId); }
 
     /**
-     * This method sets the the reference identifier field.
+     * This method sets the reference identifier field.
      *
-     * @param[in]  aReferenceId  The value of the the reference identifier field.
+     * @param[in]  aReferenceId  The value of the reference identifier field.
      *
      */
     void SetReferenceId(uint32_t aReferenceId) { mReferenceId = HostSwap32(aReferenceId); }
@@ -208,7 +205,7 @@ public:
     /**
      * This method returns the kiss code in ASCII format.
      *
-     * @returns Value of the the reference identifier field in ASCII format.
+     * @returns Value of the reference identifier field in ASCII format.
      *
      */
     char *GetKissCode(void) { return reinterpret_cast<char *>(&mReferenceId); }
@@ -419,7 +416,6 @@ private:
  * This class implements metadata required for SNTP retransmission.
  *
  */
-OT_TOOL_PACKED_BEGIN
 class QueryMetadata
 {
     friend class Client;
@@ -429,7 +425,7 @@ public:
      * Default constructor for the object.
      *
      */
-    QueryMetadata(void) { memset(this, 0, sizeof(*this)); };
+    QueryMetadata(void);
 
     /**
      * This constructor initializes the object with specific values.
@@ -438,12 +434,7 @@ public:
      * @param[in]  aContext  Context for the handler function.
      *
      */
-    QueryMetadata(otSntpResponseHandler aHandler, void *aContext)
-    {
-        memset(this, 0, sizeof(*this));
-        mResponseHandler = aHandler;
-        mResponseContext = aContext;
-    };
+    QueryMetadata(otSntpResponseHandler aHandler, void *aContext);
 
     /**
      * This method appends request data to the message.
@@ -454,82 +445,55 @@ public:
      * @retval OT_ERROR_NO_BUFS  Insufficient available buffers to grow the message.
      *
      */
-    otError AppendTo(Message &aMessage) const { return aMessage.Append(this, sizeof(*this)); };
+    otError AppendTo(Message &aMessage) const { return aMessage.Append(*this); }
 
     /**
      * This method reads request data from the message.
      *
      * @param[in]  aMessage  A reference to the message.
      *
-     * @returns The number of bytes read.
-     *
      */
-    uint16_t ReadFrom(const Message &aMessage)
+    void ReadFrom(const Message &aMessage)
     {
-        return aMessage.Read(aMessage.GetLength() - sizeof(*this), sizeof(*this), this);
-    };
+        otError error = aMessage.Read(aMessage.GetLength() - sizeof(*this), *this);
+
+        OT_ASSERT(error == OT_ERROR_NONE);
+        OT_UNUSED_VARIABLE(error);
+    }
 
     /**
      * This method updates request data in the message.
      *
      * @param[in]  aMessage  A reference to the message.
      *
-     * @returns The number of bytes updated.
-     *
      */
-    int UpdateIn(Message &aMessage) const
-    {
-        return aMessage.Write(aMessage.GetLength() - sizeof(*this), sizeof(*this), this);
-    }
-
-    /**
-     * This method checks if the message shall be sent before the given time.
-     *
-     * @param[in]  aTime  A time to compare.
-     *
-     * @retval TRUE   If the message shall be sent before the given time.
-     * @retval FALSE  Otherwise.
-     */
-    bool IsEarlier(uint32_t aTime) const { return (static_cast<int32_t>(aTime - mTransmissionTime) > 0); };
-
-    /**
-     * This method checks if the message shall be sent after the given time.
-     *
-     * @param[in]  aTime  A time to compare.
-     *
-     * @retval TRUE   If the message shall be sent after the given time.
-     * @retval FALSE  Otherwise.
-     */
-    bool IsLater(uint32_t aTime) const { return (static_cast<int32_t>(aTime - mTransmissionTime) < 0); };
+    void UpdateIn(Message &aMessage) const { aMessage.Write(aMessage.GetLength() - sizeof(*this), *this); }
 
 private:
     uint32_t              mTransmitTimestamp;   ///< Time at the client when the request departed for the server.
     otSntpResponseHandler mResponseHandler;     ///< A function pointer that is called on response reception.
     void *                mResponseContext;     ///< A pointer to arbitrary context information.
-    uint32_t              mTransmissionTime;    ///< Time when the timer should shoot for this message.
+    TimeMilli             mTransmissionTime;    ///< Time when the timer should shoot for this message.
     Ip6::Address          mSourceAddress;       ///< IPv6 address of the message source.
     Ip6::Address          mDestinationAddress;  ///< IPv6 address of the message destination.
     uint16_t              mDestinationPort;     ///< UDP port of the message destination.
     uint8_t               mRetransmissionCount; ///< Number of retransmissions.
-} OT_TOOL_PACKED_END;
+};
 
 /**
  * This class implements SNTP client.
  *
  */
-class Client
+class Client : private NonCopyable
 {
 public:
     /**
      * This constructor initializes the object.
      *
-     * @param[in]  aNetif    A reference to the network interface that SNTP client should be assigned to.
+     * @param[in]  aInstance     A reference to the OpenThread instance.
      *
      */
-    Client(Ip6::Netif &aNetif)
-        : mSocket(aNetif.GetIp6().GetUdp())
-        , mRetransmissionTimer(aNetif.GetInstance(), &Client::HandleRetransmissionTimer, this)
-        , mUnixEra(0){};
+    explicit Client(Instance &aInstance);
 
     /**
      * This method starts the SNTP client.
@@ -597,15 +561,15 @@ private:
      */
     enum
     {
-        kResponseTimeout = OPENTHREAD_CONFIG_SNTP_RESPONSE_TIMEOUT,
-        kMaxRetransmit   = OPENTHREAD_CONFIG_SNTP_MAX_RETRANSMIT,
+        kResponseTimeout = OPENTHREAD_CONFIG_SNTP_CLIENT_RESPONSE_TIMEOUT,
+        kMaxRetransmit   = OPENTHREAD_CONFIG_SNTP_CLIENT_MAX_RETRANSMIT,
     };
 
     Message *NewMessage(const Header &aHeader);
     Message *CopyAndEnqueueMessage(const Message &aMessage, const QueryMetadata &aQueryMetadata);
     void     DequeueMessage(Message &aMessage);
     otError  SendMessage(Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
-    otError  SendCopy(const Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
+    void     SendCopy(const Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
 
     Message *FindRelatedQuery(const Header &aResponseHeader, QueryMetadata &aQueryMetadata);
     void FinalizeSntpTransaction(Message &aQuery, const QueryMetadata &aQueryMetadata, uint64_t aTime, otError aResult);
@@ -616,7 +580,7 @@ private:
     static void HandleUdpReceive(void *aContext, otMessage *aMessage, const otMessageInfo *aMessageInfo);
     void        HandleUdpReceive(Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
 
-    Ip6::UdpSocket mSocket;
+    Ip6::Udp::Socket mSocket;
 
     MessageQueue mPendingQueries;
     TimerMilli   mRetransmissionTimer;

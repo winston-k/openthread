@@ -28,11 +28,11 @@
 
 include $(abs_top_nlbuild_autotools_dir)/automake/pre.am
 
-lib_LIBRARIES = libopenthread-cc2652.a
+# Do not enable -Wcast-align for this platform
+override CFLAGS    := $(filter-out -Wcast-align,$(CFLAGS))
+override CXXFLAGS  := $(filter-out -Wcast-align,$(CXXFLAGS))
 
-# Do not enable -pedantic-errors for cc26xx driverlib
-override CFLAGS   := $(filter-out -pedantic-errors,$(CFLAGS))
-override CXXFLAGS := $(filter-out -pedantic-errors,$(CXXFLAGS))
+lib_LIBRARIES = libopenthread-cc2652.a
 
 libopenthread_cc2652_a_CPPFLAGS                                                         = \
     -I$(top_srcdir)/include                                                               \
@@ -47,12 +47,16 @@ libopenthread_cc2652_a_CPPFLAGS                                                 
 
 PLATFORM_SOURCES                                                                        = \
     alarm.c                                                                               \
+    cc2652_radio.h                                                                        \
     diag.c                                                                                \
+    entropy.c                                                                             \
     flash.c                                                                               \
     logging.c                                                                             \
     misc.c                                                                                \
+    openthread-core-cc2652-config.h                                                       \
+    openthread-core-cc2652-config-check.h                                                 \
+    platform-cc2652.h                                                                     \
     radio.c                                                                               \
-    random.c                                                                              \
     system.c                                                                              \
     uart.c                                                                                \
     crypto/aes_alt.c                                                                      \
@@ -67,15 +71,6 @@ libopenthread_cc2652_a_SOURCES                                                  
 
 libopenthread_cc2652_a_DEPENDENCIES                                                     = \
     $(top_srcdir)/third_party/ti/devices/cc13x2_cc26x2/driverlib/bin/gcc/driverlib.a      \
-    $(NULL)
-
-noinst_HEADERS                                                                          = \
-    platform-cc2652.h                                                                     \
-    $(NULL)
-
-PRETTY_FILES                                                                            = \
-    $(PLATFORM_SOURCES)                                                                   \
-    $(noinst_HEADERS)                                                                     \
     $(NULL)
 
 Dash = -
